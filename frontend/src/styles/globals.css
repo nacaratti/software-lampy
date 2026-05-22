@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 265 89% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 191 91% 45%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 265 89% 65%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 240 12% 7%;
+    --foreground: 240 5% 96%;
+    --card: 240 11% 9%;
+    --card-foreground: 240 5% 96%;
+    --popover: 240 11% 9%;
+    --popover-foreground: 240 5% 96%;
+    --primary: 265 89% 70%;
+    --primary-foreground: 240 12% 7%;
+    --secondary: 240 8% 14%;
+    --secondary-foreground: 240 5% 96%;
+    --muted: 240 8% 14%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 191 91% 55%;
+    --accent-foreground: 240 12% 7%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 6% 18%;
+    --input: 240 6% 18%;
+    --ring: 265 89% 70%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+  }
+
+  /* Scientific UI niceties: thinner scrollbars, smooth focus rings */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+}
+
+/* Subtle gradient backdrop for the app shell */
+.shell-backdrop {
+  background:
+    radial-gradient(1200px 600px at 5% -10%, hsla(265, 89%, 65%, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 95% 110%, hsla(191, 91%, 55%, 0.10), transparent 60%),
+    hsl(var(--background));
+}
+
+.glass-card {
+  background: hsla(240, 11%, 9%, 0.6);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid hsl(var(--border));
+}
