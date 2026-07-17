@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from backend.app.errors import heavy_solvers, run_solver
 from backend.app.schemas.thermal import ThermalCalculationRequest, ThermalCalculationResponse
 from backend.app.services.encoders import encode_array
 from fibersim.solvers.thermal.cavity import solve_laser_rate_equations, calculate_thermal_cavity
@@ -7,7 +8,11 @@ router = APIRouter(prefix="/api/thermal", tags=["thermal"])
 
 @router.post("/calculate", response_model=ThermalCalculationResponse)
 def calculate_thermal(req: ThermalCalculationRequest) -> ThermalCalculationResponse:
-    try:
+    with heavy_solvers.slot("thermal"):
+        return run_solver(_calculate_thermal_impl, req)
+
+
+def _calculate_thermal_impl(req: ThermalCalculationRequest) -> ThermalCalculationResponse:
         # 1. Solve active laser cavity power distributions
         laser_res = solve_laser_rate_equations(
             fiber_length=req.fiber_length_m,
@@ -20,13 +25,18 @@ def calculate_thermal(req: ThermalCalculationRequest) -> ThermalCalculationRespo
             lambda_signal=req.lambda_signal_nm * 1e-9,
             gamma_pump=req.gamma_pump,
             gamma_signal=req.gamma_signal,
+            sigma_abs_pump=req.sigma_abs_pump,
+            sigma_em_pump=req.sigma_em_pump,
+            sigma_abs_signal=req.sigma_abs_signal,
+            sigma_em_signal=req.sigma_em_signal,
             P_pump_forward=req.P_pump_forward_w,
             P_pump_backward=req.P_pump_backward_w,
             P_signal_seed=req.P_signal_seed_w,
             pumping=req.pumping,
+            method=req.method,
             num_points=req.num_z_points,
         )
-        
+
         # 2. Solve active 2D thermal distribution
         thermal_res = calculate_thermal_cavity(
             laser_res,
@@ -39,6 +49,7 @@ def calculate_thermal(req: ThermalCalculationRequest) -> ThermalCalculationRespo
             k_clad=req.k_clad,
             k_coat=req.k_coat,
             h_conv=req.h_conv,
+            epsilon=req.epsilon,
             T_ambient=req.T_ambient_celsius + 273.15,
             num_radial=req.num_r_points,
         )
@@ -49,6 +60,8 @@ def calculate_thermal(req: ThermalCalculationRequest) -> ThermalCalculationRespo
         pumps_b = laser_res['P_pump_backward'].tolist()
         pumps_t = laser_res['P_pump'].tolist()
         sigs = laser_res['P_signal'].tolist()
+        sigs_b = laser_res['P_signal_backward'].tolist()
+        pout = laser_res['P_out'].tolist()
         n2_f = (laser_res['N2'] / req.N_total).tolist()
         
         r_list_um = (thermal_res['r'] * 1e6).tolist()
@@ -61,6 +74,8 @@ def calculate_thermal(req: ThermalCalculationRequest) -> ThermalCalculationRespo
             pumps_backward=pumps_b,
             pumps_total=pumps_t,
             signals_forward=sigs,
+            signals_backward=sigs_b,
+            pump_output_w=pout,
             n2_fraction=n2_f,
             r_um=r_list_um,
             T_center_celsius=T_center,
@@ -70,6 +85,5 @@ def calculate_thermal(req: ThermalCalculationRequest) -> ThermalCalculationRespo
             efficiency=laser_res['efficiency'],
             output_power_w=laser_res['output_power'],
             T_max_celsius=thermal_res['T_max_celsius'],
+            method_used=laser_res.get('method_used', 'analytical'),
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Thermal simulation error: {str(e)}")

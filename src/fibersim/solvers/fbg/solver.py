@@ -368,24 +368,24 @@ def calculate_lpg(n_eff_core, n_eff_cladding, period_um, length_mm, dn,
 def _phase_mask_viability(period_nm: float) -> tuple:
     """Return (viable: bool, message: str) based on phase mask period."""
     if period_nm < 400:
-        return False, "Período muito pequeno para fabricação convencional (< 400 nm)"
+        return False, "Period too small for conventional fabrication (< 400 nm)"
     elif period_nm < 500:
-        return True, "Viável com e-beam lithography de alta precisão"
+        return True, "Viable with high-precision e-beam lithography"
     elif period_nm < 1000:
-        return True, "Viável com fotolitografia UV padrão"
+        return True, "Viable with standard UV photolithography"
     elif period_nm < 5000:
-        return True, "Facilmente fabricável com fotolitografia convencional"
+        return True, "Easily fabricated with conventional photolithography"
     else:
-        return True, "Período grande — considere fabricação holográfica ou direta"
+        return True, "Large period — consider holographic or direct-write fabrication"
 
 
 def _phase_mask_technique(period_nm: float) -> str:
     if period_nm < 500:
         return "E-beam lithography"
     elif period_nm < 1500:
-        return "Fotolitografia UV (DUV ou I-line)"
+        return "UV photolithography (DUV or I-line)"
     else:
-        return "Fotolitografia convencional ou holográfica"
+        return "Conventional or holographic photolithography"
 
 
 def calculate_phase_mask(

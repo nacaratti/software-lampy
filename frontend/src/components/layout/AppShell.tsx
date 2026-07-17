@@ -5,6 +5,8 @@ import { Toaster } from "sonner";
 import { TopBar } from "./TopBar";
 import { SidebarNav } from "./SidebarNav";
 import { CommandPalette } from "./CommandPalette";
+import { MobileNav } from "./MobileNav";
+import { PackagesDialog } from "./PackagesDialog";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -12,6 +14,8 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [packagesOpen, setPackagesOpen] = useState(false);
   const navigate = useNavigate();
 
   useHotkeys("mod+k", (e) => {
@@ -26,12 +30,18 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="min-h-screen shell-backdrop flex flex-col">
-      <TopBar onOpenCommand={() => setPaletteOpen(true)} />
+      <TopBar
+        onOpenCommand={() => setPaletteOpen(true)}
+        onOpenMobileNav={() => setMobileNavOpen(true)}
+        onOpenPackages={() => setPackagesOpen(true)}
+      />
       <div className="flex flex-1 overflow-hidden">
         <SidebarNav />
         <main className="flex-1 overflow-y-auto animate-fade-in">{children}</main>
       </div>
+      <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <CommandPalette open={paletteOpen} setOpen={setPaletteOpen} />
+      <PackagesDialog open={packagesOpen} onClose={() => setPackagesOpen(false)} />
       <Toaster
         position="bottom-right"
         toastOptions={{

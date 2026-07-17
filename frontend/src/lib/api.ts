@@ -6,6 +6,8 @@ import type {
 } from "@/types/modes";
 import type { PowerASERequest } from "@/types/power";
 import type { BPMRequest } from "@/types/bpm";
+import type { GNLSERequest } from "@/types/gnlse";
+import type { PowerRampRequest } from "@/types/power_ramp";
 import type { JobCreatedResponse, JobInfo } from "@/types/jobs";
 import type {
   IndexProfilePreviewRequest,
@@ -14,7 +16,17 @@ import type {
 import type { FBGCalculationRequest, FBGCalculationResponse, PhaseMaskRequest, PhaseMaskResponse } from "@/types/fbg";
 import type { SplicingCalculationRequest, SplicingCalculationResponse } from "@/types/splicing";
 import type { ThermalCalculationRequest, ThermalCalculationResponse } from "@/types/thermal";
+import type { CouplerCalculationRequest, CouplerCalculationResponse } from "@/types/coupler";
+import type { TaperCalculationRequest, TaperCalculationResponse } from "@/types/taper";
 import type { Device, DeviceCreate, DeviceUpdate } from "@/types/device";
+import type {
+  SystemSimulateRequest,
+  SystemValidateResponse,
+  SystemCreate,
+  SystemUpdate,
+  SystemOut,
+  SystemSummary,
+} from "@/types/system";
 
 class ApiError extends Error {
   constructor(public status: number, public detail: string) {
@@ -22,8 +34,15 @@ class ApiError extends Error {
   }
 }
 
+/** API origin. Empty string = same origin (dev proxy). Set VITE_API_BASE for deployments. */
+export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+
+function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 async function post<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -42,7 +61,7 @@ async function post<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
 }
 
 async function get<TRes>(path: string): Promise<TRes> {
-  const res = await fetch(path);
+  const res = await fetch(apiUrl(path));
   if (!res.ok) {
     throw new ApiError(res.status, res.statusText);
   }
@@ -50,7 +69,7 @@ async function get<TRes>(path: string): Promise<TRes> {
 }
 
 async function put<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -67,7 +86,7 @@ async function put<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
 }
 
 async function del(path: string): Promise<void> {
-  const res = await fetch(path, { method: "DELETE" });
+  const res = await fetch(apiUrl(path), { method: "DELETE" });
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -96,6 +115,10 @@ export const api = {
     post<PowerASERequest, JobCreatedResponse>("/api/power/ase", req),
   startBPM: (req: BPMRequest) =>
     post<BPMRequest, JobCreatedResponse>("/api/bpm", req),
+  startGNLSE: (req: GNLSERequest) =>
+    post<GNLSERequest, JobCreatedResponse>("/api/gnlse", req),
+  startPowerRamp: (req: PowerRampRequest) =>
+    post<PowerRampRequest, JobCreatedResponse>("/api/power-ramp", req),
 
   calculateFBG: (req: FBGCalculationRequest) =>
     post<FBGCalculationRequest, FBGCalculationResponse>("/api/fbg/calculate", req),
@@ -105,11 +128,15 @@ export const api = {
     post<SplicingCalculationRequest, SplicingCalculationResponse>("/api/splicing/calculate", req),
   calculateThermal: (req: ThermalCalculationRequest) =>
     post<ThermalCalculationRequest, ThermalCalculationResponse>("/api/thermal/calculate", req),
+  calculateCoupler: (req: CouplerCalculationRequest) =>
+    post<CouplerCalculationRequest, CouplerCalculationResponse>("/api/coupler/calculate", req),
+  calculateTaper: (req: TaperCalculationRequest) =>
+    post<TaperCalculationRequest, TaperCalculationResponse>("/api/taper/calculate", req),
 
   getJob: (jobId: string) => get<JobInfo>(`/api/jobs/${jobId}`),
   getJobResult: <T = unknown>(jobId: string) => get<T>(`/api/jobs/${jobId}/result`),
   cancelJob: (jobId: string) =>
-    fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" }),
+    fetch(apiUrl(`/api/jobs/${jobId}/cancel`), { method: "POST" }),
 
   listDevices: (params?: { device_type?: string; category?: string }) => {
     const qs = new URLSearchParams();
@@ -122,6 +149,18 @@ export const api = {
   getDevice: (id: string) => get<Device>(`/api/devices/${id}`),
   updateDevice: (id: string, body: DeviceUpdate) => put<DeviceUpdate, Device>(`/api/devices/${id}`, body),
   deleteDevice: (id: string) => del(`/api/devices/${id}`),
+
+  validateSystem: (req: SystemSimulateRequest) =>
+    post<SystemSimulateRequest, SystemValidateResponse>("/api/system/validate", req),
+  simulateSystem: (req: SystemSimulateRequest) =>
+    post<SystemSimulateRequest, JobCreatedResponse>("/api/system/simulate", req),
+
+  listSystems: () => get<SystemSummary[]>("/api/systems"),
+  createSystem: (body: SystemCreate) => post<SystemCreate, SystemOut>("/api/systems", body),
+  getSystem: (id: string) => get<SystemOut>(`/api/systems/${id}`),
+  updateSystem: (id: string, body: SystemUpdate) => put<SystemUpdate, SystemOut>(`/api/systems/${id}`, body),
+  deleteSystem: (id: string) => del(`/api/systems/${id}`),
+  duplicateSystem: (id: string) => post<Record<string, never>, SystemOut>(`/api/systems/${id}/duplicate`, {}),
 };
 
 export { ApiError };

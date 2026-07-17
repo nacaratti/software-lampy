@@ -8,8 +8,9 @@ import {
   CommandItem,
   CommandShortcut,
 } from "@/components/ui/command";
-import { Aperture, Home, Waves, Zap, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { useThemeStore } from "@/stores/useThemeStore";
+import { navItems } from "@/lib/navItems";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -32,22 +33,12 @@ export function CommandPalette({ open, setOpen }: CommandPaletteProps) {
         <CommandEmpty>No results found.</CommandEmpty>
 
         <CommandGroup heading="Navigate">
-          <CommandItem onSelect={() => go("/")}>
-            <Home className="mr-2 h-4 w-4" /> Home
-            <CommandShortcut>G H</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => go("/modes")}>
-            <Aperture className="mr-2 h-4 w-4" /> Fiber Modes Solver
-            <CommandShortcut>G M</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => go("/power")}>
-            <Zap className="mr-2 h-4 w-4" /> Power &amp; ASE
-            <CommandShortcut>G P</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => go("/bpm")}>
-            <Waves className="mr-2 h-4 w-4" /> BPM
-            <CommandShortcut>G B</CommandShortcut>
-          </CommandItem>
+          {navItems.map((item) => (
+            <CommandItem key={item.to} onSelect={() => go(item.to)}>
+              <item.icon className="mr-2 h-4 w-4" /> {item.label}
+              {item.chord && <CommandShortcut>G {item.chord.toUpperCase()}</CommandShortcut>}
+            </CommandItem>
+          ))}
         </CommandGroup>
 
         <CommandGroup heading="Appearance">

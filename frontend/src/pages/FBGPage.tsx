@@ -15,6 +15,7 @@ import { NumberField } from "@/components/common/NumberField";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PlotlyChart } from "@/components/plots/PlotlyChart";
 import { api } from "@/lib/api";
+import { useSyncJob } from "@/lib/syncJob";
 import type { FBGCalculationResponse, PhaseMaskResponse } from "@/types/fbg";
 
 type GratingType = "uniform" | "chirped" | "apodized" | "tilted" | "lpg";
@@ -57,32 +58,39 @@ export function FBGPage() {
   const [result, setResult] = useState<FBGCalculationResponse | null>(null);
   const [phaseMaskLoading, setPhaseMaskLoading] = useState(false);
   const [phaseMask, setPhaseMask] = useState<PhaseMaskResponse | null>(null);
+  const runSync = useSyncJob();
 
   async function runSimulation() {
     setLoading(true);
     setPhaseMask(null);
+    const req = {
+      grating_type: gratingType,
+      n_eff: nEff,
+      length_mm: lengthMm,
+      dn: dn,
+      period_nm: periodNm,
+      period_um: periodUm,
+      period_end_nm: periodEndNm,
+      chirp_type: chirpType,
+      apodization_profile: apodizationProfile,
+      profile_strength: profileStrength,
+      n_eff_cladding_base: nEffCladdingBase,
+      tilt_angle_deg: tiltAngleDeg,
+      num_cladding_modes: numCladdingModes,
+      n_eff_cladding: nEffCladding,
+      target_mode_order: targetModeOrder,
+      wl_start_nm: wlStart,
+      wl_end_nm: wlEnd,
+      num_points: numPoints,
+      num_sections: numSections,
+    };
     try {
-      const res = await api.calculateFBG({
-        grating_type: gratingType,
-        n_eff: nEff,
-        length_mm: lengthMm,
-        dn: dn,
-        period_nm: periodNm,
-        period_um: periodUm,
-        period_end_nm: periodEndNm,
-        chirp_type: chirpType,
-        apodization_profile: apodizationProfile,
-        profile_strength: profileStrength,
-        n_eff_cladding_base: nEffCladdingBase,
-        tilt_angle_deg: tiltAngleDeg,
-        num_cladding_modes: numCladdingModes,
-        n_eff_cladding: nEffCladding,
-        target_mode_order: targetModeOrder,
-        wl_start_nm: wlStart,
-        wl_end_nm: wlEnd,
-        num_points: numPoints,
-        num_sections: numSections,
-      });
+      const res = await runSync(
+        "fbg",
+        `FBG ${gratingType} ${lengthMm}mm`,
+        req,
+        () => api.calculateFBG(req)
+      );
       setResult(res);
       toast.success("Simulation completed successfully");
     } catch (e) {
@@ -487,6 +495,7 @@ export function FBGPage() {
                 <CardContent className="p-2">
                   <PlotlyChart
                     data={chartData}
+                    exportFilename="fbg_spectrum"
                     layout={{
                       xaxis: { title: { text: "Wavelength (nm)" } },
                       yaxis: {
@@ -551,7 +560,7 @@ export function FBGPage() {
                     {phaseMaskLoading
                       ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       : <ScanLine className="h-3.5 w-3.5" />}
-                    {phaseMaskLoading ? "Calculando..." : "Obter a Máscara de Fase"}
+                    {phaseMaskLoading ? "Computing..." : "Compute Phase Mask"}
                   </Button>
                 </div>
               )}
@@ -603,7 +612,7 @@ function PhaseMaskSection({
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center gap-2 pt-1">
         <ScanLine className="h-4 w-4 text-primary" />
-        <span className="text-sm font-semibold">Máscara de Fase — Parâmetros de Inscrição</span>
+        <span className="text-sm font-semibold">Phase Mask — Inscription Parameters</span>
       </div>
 
       {/* Key parameters */}
@@ -619,7 +628,7 @@ function PhaseMaskSection({
         <Card className="bg-card/50 backdrop-blur-sm">
           <CardContent className="p-4 text-center">
             <div className="text-[10px] text-muted-foreground uppercase font-medium">
-              {isChirped ? "Λ_pm (centro)" : "Λ_pm (período)"}
+              {isChirped ? "Λ_pm (center)" : "Λ_pm (period)"}
             </div>
             <div className="text-xl font-bold mt-1 text-cyan-400">
               {params.period_pm_center_nm.toFixed(3)} nm
@@ -629,7 +638,7 @@ function PhaseMaskSection({
         {isChirped && (
           <Card className="bg-card/50 backdrop-blur-sm">
             <CardContent className="p-4 text-center">
-              <div className="text-[10px] text-muted-foreground uppercase font-medium">Λ_pm (min–máx)</div>
+              <div className="text-[10px] text-muted-foreground uppercase font-medium">Λ_pm (min–max)</div>
               <div className="text-base font-bold mt-1 text-indigo-400">
                 {params.period_pm_min_nm.toFixed(2)} – {params.period_pm_max_nm.toFixed(2)} nm
               </div>
@@ -638,7 +647,7 @@ function PhaseMaskSection({
         )}
         <Card className="bg-card/50 backdrop-blur-sm">
           <CardContent className="p-4 text-center">
-            <div className="text-[10px] text-muted-foreground uppercase font-medium">δn pico</div>
+            <div className="text-[10px] text-muted-foreground uppercase font-medium">δn peak</div>
             <div className="text-xl font-bold mt-1 text-emerald-400">
               {params.dn_peak.toExponential(2)}
             </div>
@@ -654,9 +663,9 @@ function PhaseMaskSection({
         </Card>
         <Card className="bg-card/50 backdrop-blur-sm">
           <CardContent className="p-4 text-center">
-            <div className="text-[10px] text-muted-foreground uppercase font-medium">Fase total</div>
+            <div className="text-[10px] text-muted-foreground uppercase font-medium">Total phase</div>
             <div className="text-xl font-bold mt-1 text-rose-400">
-              {params.phase_total_cycles.toFixed(0)} ciclos
+              {params.phase_total_cycles.toFixed(0)} cycles
             </div>
           </CardContent>
         </Card>
@@ -666,7 +675,7 @@ function PhaseMaskSection({
       {(isChirped || !periodIsFlat) && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Perfil do Período da Máscara Λ_pm(z)</CardTitle>
+            <CardTitle className="text-sm font-semibold">Mask Period Profile Λ_pm(z)</CardTitle>
           </CardHeader>
           <CardContent className="p-2">
             <PlotlyChart
@@ -681,7 +690,7 @@ function PhaseMaskSection({
                 },
               ]}
               layout={{
-                xaxis: { title: { text: "Posição z (mm)" } },
+                xaxis: { title: { text: "Position z (mm)" } },
                 yaxis: { title: { text: "Λ_pm (nm)" } },
                 margin: { t: 10, r: 20, b: 40, l: 55 },
               }}
@@ -695,7 +704,7 @@ function PhaseMaskSection({
       {isApodized && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Perfil de Modulação de Índice δn(z)</CardTitle>
+            <CardTitle className="text-sm font-semibold">Index Modulation Profile δn(z)</CardTitle>
           </CardHeader>
           <CardContent className="p-2">
             <PlotlyChart
@@ -712,7 +721,7 @@ function PhaseMaskSection({
                 } as Plotly.Data,
               ]}
               layout={{
-                xaxis: { title: { text: "Posição z (mm)" } },
+                xaxis: { title: { text: "Position z (mm)" } },
                 yaxis: { title: { text: "δn" } },
                 margin: { t: 10, r: 20, b: 40, l: 65 },
               }}
@@ -726,7 +735,7 @@ function PhaseMaskSection({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Coeficiente de Acoplamento κ(z)</CardTitle>
+            <CardTitle className="text-sm font-semibold">Coupling Coefficient κ(z)</CardTitle>
           </CardHeader>
           <CardContent className="p-2">
             <PlotlyChart
@@ -751,7 +760,7 @@ function PhaseMaskSection({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Fase Acumulada φ(z)</CardTitle>
+            <CardTitle className="text-sm font-semibold">Accumulated Phase φ(z)</CardTitle>
           </CardHeader>
           <CardContent className="p-2">
             <PlotlyChart
@@ -761,13 +770,13 @@ function PhaseMaskSection({
                   y: phase_rad.map((v) => v / (2 * Math.PI)),
                   type: "scatter",
                   mode: "lines",
-                  name: "φ(z) (ciclos)",
+                  name: "φ(z) (cycles)",
                   line: { color: "#EC4899", width: 2 },
                 },
               ]}
               layout={{
                 xaxis: { title: { text: "z (mm)" } },
-                yaxis: { title: { text: "Fase (ciclos)" } },
+                yaxis: { title: { text: "Phase (cycles)" } },
                 margin: { t: 10, r: 10, b: 40, l: 60 },
               }}
               height={220}
@@ -780,19 +789,19 @@ function PhaseMaskSection({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Geometria de Escrita UV</CardTitle>
+            <CardTitle className="text-sm font-semibold">UV Writing Geometry</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Laser UV (λ)</span>
+              <span className="text-muted-foreground">UV laser (λ)</span>
               <span className="font-mono font-medium">{params.lambda_uv_nm} nm</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Λ_pm central</span>
+              <span className="text-muted-foreground">Λ_pm center</span>
               <span className="font-mono font-medium">{params.period_pm_center_nm.toFixed(3)} nm</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Ângulo de difração (±1)</span>
+              <span className="text-muted-foreground">Diffraction angle (±1)</span>
               <span className="font-mono font-medium">
                 {params.diffraction_angle_deg !== null
                   ? `${params.diffraction_angle_deg.toFixed(2)}°`
@@ -804,7 +813,7 @@ function PhaseMaskSection({
               <span className="font-mono font-medium">{params.kappa_L_product.toFixed(3)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">R_pico esperado</span>
+              <span className="text-muted-foreground">Expected R_peak</span>
               <span className="font-mono font-medium text-emerald-400">
                 {(Math.tanh(params.kappa_L_product) ** 2 * 100).toFixed(1)}%
               </span>
@@ -814,30 +823,30 @@ function PhaseMaskSection({
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Dados de Fabricação</CardTitle>
+            <CardTitle className="text-sm font-semibold">Fabrication Data</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between items-start gap-2">
-              <span className="text-muted-foreground shrink-0">Viabilidade</span>
+              <span className="text-muted-foreground shrink-0">Viability</span>
               <span className={`text-right text-xs font-medium ${params.viable ? "text-emerald-400" : "text-amber-400"}`}>
                 {params.viable ? "✓" : "⚠"} {params.viability_message}
               </span>
             </div>
             <div className="flex justify-between items-start gap-2">
-              <span className="text-muted-foreground shrink-0">Técnica</span>
+              <span className="text-muted-foreground shrink-0">Technique</span>
               <span className="text-right text-xs">{params.recommended_technique}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Precisão requerida</span>
+              <span className="text-muted-foreground">Required precision</span>
               <span className="font-mono font-medium">±{params.required_precision_nm.toFixed(1)} nm</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Fluência típica</span>
+              <span className="text-muted-foreground">Typical fluence</span>
               <span className="font-mono text-xs">{params.typical_fluence}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Fase total</span>
-              <span className="font-mono font-medium">{params.phase_total_cycles.toFixed(0)} ciclos</span>
+              <span className="text-muted-foreground">Total phase</span>
+              <span className="font-mono font-medium">{params.phase_total_cycles.toFixed(0)} cycles</span>
             </div>
           </CardContent>
         </Card>
@@ -847,12 +856,12 @@ function PhaseMaskSection({
       <Card className="border-dashed border-primary/30 bg-primary/5">
         <CardContent className="p-4 text-xs text-muted-foreground space-y-1">
           <p>
-            <span className="font-medium text-foreground">Relação fase–FBG:</span>{" "}
-            Λ_pm = 2 × Λ_FBG. Os primeiros de difração ±1 da máscara interferem e criam
-            franjas com período Λ_FBG = Λ_pm/2, satisfazendo a condição de Bragg λ_B = 2 n_eff Λ_FBG.
+            <span className="font-medium text-foreground">Phase–FBG relation:</span>{" "}
+            Λ_pm = 2 × Λ_FBG. The mask's ±1 diffraction orders interfere and create
+            fringes with period Λ_FBG = Λ_pm/2, satisfying the Bragg condition λ_B = 2 n_eff Λ_FBG.
           </p>
           <p>
-            <span className="font-medium text-foreground">Modo reverso (FBG → máscara):</span>{" "}
+            <span className="font-medium text-foreground">Reverse mode (FBG → mask):</span>{" "}
             Λ_pm = λ_B / n_eff = {params.bragg_wavelength_nm.toFixed(3)} / n_eff ≈{" "}
             {params.period_pm_center_nm.toFixed(3)} nm.
           </p>

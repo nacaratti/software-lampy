@@ -16,6 +16,9 @@ class JobStatus(str, Enum):
 class JobKind(str, Enum):
     ase = "ase"
     bpm = "bpm"
+    system = "system"
+    gnlse = "gnlse"
+    power_ramp = "power_ramp"
 
 
 class JobInfo(BaseModel):

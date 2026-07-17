@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { PlotlyChart } from "@/components/plots/PlotlyChart";
 import { api } from "@/lib/api";
 import { decodeArray, reshape2D } from "@/lib/encoding";
+import { useSyncJob } from "@/lib/syncJob";
 import type { SplicingCalculationResponse } from "@/types/splicing";
 
 export function SplicingPage() {
@@ -35,6 +36,7 @@ export function SplicingPage() {
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SplicingCalculationResponse | null>(null);
+  const runSync = useSyncJob();
 
   async function runSimulation() {
     if (cladN1 >= coreN1) {
@@ -45,23 +47,29 @@ export function SplicingPage() {
       toast.error("Fiber 2: Cladding refractive index must be less than core refractive index");
       return;
     }
-    
+
     setLoading(true);
+    const req = {
+      core_n1: coreN1,
+      cladding_n1: cladN1,
+      radius_um1: radius1,
+      core_n2: coreN2,
+      cladding_n2: cladN2,
+      radius_um2: radius2,
+      wavelength_nm: wavelength,
+      offset_x_um: offsetX,
+      offset_y_um: offsetY,
+      tilt_x_mrad: tiltX,
+      tilt_y_mrad: tiltY,
+      grid_size: gridSize,
+    };
     try {
-      const res = await api.calculateSplicing({
-        core_n1: coreN1,
-        cladding_n1: cladN1,
-        radius_um1: radius1,
-        core_n2: coreN2,
-        cladding_n2: cladN2,
-        radius_um2: radius2,
-        wavelength_nm: wavelength,
-        offset_x_um: offsetX,
-        offset_y_um: offsetY,
-        tilt_x_mrad: tiltX,
-        tilt_y_mrad: tiltY,
-        grid_size: gridSize,
-      });
+      const res = await runSync(
+        "splicing",
+        `Splicing ${wavelength}nm`,
+        req,
+        () => api.calculateSplicing(req)
+      );
       setResult(res);
       toast.success("Splicing calculation completed");
     } catch (e) {

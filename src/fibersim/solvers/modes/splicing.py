@@ -1,3 +1,11 @@
+"""Splice-loss estimation via LP01 overlap integrals.
+
+UNITS: unlike the rest of fibersim (SI meters), this module's public API takes
+micrometers/nanometers/milliradians, as spelled out by the parameter suffixes
+(`radius_um*`, `wavelength_nm`, `offset_*_um`, `tilt_*_mrad`). Do NOT pass SI
+meters here — a `FiberGeometry.core_radius` (meters) must be converted with
+`* 1e6` first.
+"""
 import numpy as np
 from scipy.special import jv, kn
 from fibersim.solvers.modes.analytical import find_modes, find_mode

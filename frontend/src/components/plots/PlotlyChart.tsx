@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import Plotly from "plotly.js-dist-min";
+import { Download } from "lucide-react";
 import { useThemeStore } from "@/stores/useThemeStore";
+import { exportPlotlyDataAsCsv } from "@/lib/exportCsv";
 
 interface PlotlyChartProps {
   data: Plotly.Data[];
@@ -8,6 +10,9 @@ interface PlotlyChartProps {
   config?: Partial<Plotly.Config>;
   height?: number | string;
   className?: string;
+  /** When set, shows a small "Export CSV" button that downloads the trace
+   * data under this filename (heatmap/2D traces are skipped — not tabular). */
+  exportFilename?: string;
 }
 
 function getThemeLayout(isDark: boolean): Partial<Plotly.Layout> {
@@ -58,6 +63,7 @@ export function PlotlyChart({
   config = {},
   height = 360,
   className,
+  exportFilename,
 }: PlotlyChartProps) {
   const ref = useRef<HTMLDivElement>(null);
   const isDark = useThemeStore((s) => s.theme === "dark");
@@ -90,5 +96,24 @@ export function PlotlyChart({
     };
   }, []);
 
-  return <div ref={ref} className={className} style={{ height, width: "100%" }} />;
+  return (
+    <div className="relative">
+      {exportFilename && (
+        <button
+          type="button"
+          aria-label="Export chart data as CSV"
+          title="Export CSV"
+          onClick={() => {
+            if (!exportPlotlyDataAsCsv(exportFilename, data)) {
+              console.warn("PlotlyChart: nothing exportable (heatmap-only data)");
+            }
+          }}
+          className="absolute right-1 top-1 z-10 rounded-md p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <div ref={ref} className={className} style={{ height, width: "100%" }} />
+    </div>
+  );
 }

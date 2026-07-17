@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
-import { Play, Plus, Trash2, Save, Loader2 } from "lucide-react";
+import { Play, Plus, Trash2, Save, Loader2, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { NumberField } from "@/components/common/NumberField";
@@ -26,7 +26,19 @@ import type {
 } from "@/types/power";
 import type { IonKind } from "@/types/fiber";
 import { savePreset } from "@/lib/presets";
+import { PresetsDialog } from "@/components/common/PresetsDialog";
 import { formatNumber } from "@/lib/utils";
+import type { FiberConfig } from "@/types/fiber";
+
+interface PowerAsePreset {
+  fiber: FiberConfig;
+  ion: IonKind;
+  dopantDensity: number;
+  length_m: number;
+  pumps: PumpConfig[];
+  signals: SignalConfig[];
+  ase: ASEConfig;
+}
 
 const ION_DEFAULTS: Record<
   IonKind,
@@ -71,6 +83,7 @@ export function PowerSimPage() {
     overlap: 0.85,
     loss_db_per_m: 0.005,
   });
+  const [showPresets, setShowPresets] = useState(false);
 
   function applyIonDefaults(nextIon: IonKind) {
     const d = ION_DEFAULTS[nextIon];
@@ -146,8 +159,18 @@ export function PowerSimPage() {
   function handleSavePreset() {
     const name = prompt("Preset name?", `ASE ${new Date().toLocaleTimeString()}`);
     if (!name) return;
-    savePreset("power-ase", name, { fiber, ion, dopantDensity, length_m, pumps, signals, ase });
+    savePreset<PowerAsePreset>("power-ase", name, { fiber, ion, dopantDensity, length_m, pumps, signals, ase });
     toast.success("Preset saved");
+  }
+
+  function handleLoadPreset(config: PowerAsePreset) {
+    setFiber(config.fiber);
+    setIon(config.ion);
+    setDopantDensity(config.dopantDensity);
+    setLength(config.length_m);
+    setPumps(config.pumps);
+    setSignals(config.signals);
+    setASE(config.ase);
   }
 
   const result = sock.result;
@@ -160,6 +183,10 @@ export function PowerSimPage() {
         description="Steady-state bidirectional rate equations for Yb / Er / Tm doped fibers, with amplified spontaneous emission across a wavelength band."
         actions={
           <>
+            <Button variant="outline" size="sm" onClick={() => setShowPresets(true)}>
+              <FolderOpen className="h-3.5 w-3.5" />
+              Load preset
+            </Button>
             <Button variant="outline" size="sm" onClick={handleSavePreset}>
               <Save className="h-3.5 w-3.5" />
               Save preset
@@ -306,6 +333,13 @@ export function PowerSimPage() {
           </Card>
         </div>
       )}
+
+      <PresetsDialog<PowerAsePreset>
+        kind="power-ase"
+        open={showPresets}
+        onClose={() => setShowPresets(false)}
+        onLoad={handleLoadPreset}
+      />
     </div>
   );
 }
@@ -352,6 +386,7 @@ function ChannelList<T>({
               variant="ghost" size="icon"
               className="absolute right-2 top-2 h-7 w-7 text-muted-foreground hover:text-destructive"
               onClick={() => onChange(items.filter((_, j) => j !== i))}
+              aria-label={`Remove ${title.toLowerCase()} ${i + 1}`}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>

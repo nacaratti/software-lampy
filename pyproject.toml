@@ -33,6 +33,14 @@ backend = [
     "sqlalchemy>=2.0.0",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning:fastapi.*",
+    "ignore::DeprecationWarning:starlette.*",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

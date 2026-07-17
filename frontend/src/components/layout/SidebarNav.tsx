@@ -1,36 +1,26 @@
 import { NavLink } from "react-router-dom";
-import { Waves, Zap, Aperture, Home, History, Grid3X3, Link, Thermometer, Library, Cpu } from "lucide-react";
+import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { useJobsStore } from "@/stores/useJobsStore";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-
-interface NavItem {
-  to: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  desc: string;
-}
-
-const items: NavItem[] = [
-  { to: "/", label: "Home", icon: Home, desc: "Overview & quick starts" },
-  { to: "/modes", label: "Fiber Modes Solver", icon: Aperture, desc: "LP modes, fields" },
-  { to: "/power", label: "Power & ASE", icon: Zap, desc: "Pumps, signals, ASE" },
-  { to: "/bpm", label: "BPM", icon: Waves, desc: "Beam propagation" },
-  { to: "/fbg", label: "FBG Solver", icon: Grid3X3, desc: "Bragg gratings, phase mask" },
-  { to: "/splicing", label: "Splicing Loss", icon: Link, desc: "Fiber splicing overlap" },
-  { to: "/thermal", label: "Thermal Simulator", icon: Thermometer, desc: "Cavity heating & pumps" },
-  { to: "/devices", label: "Device Library", icon: Library, desc: "Fibers, FBGs, couplers" },
-  { to: "/system", label: "Laser System", icon: Cpu, desc: "Drag-and-drop canvas" },
-];
+import { navItems } from "@/lib/navItems";
+import { useNavPrefsStore } from "@/stores/useNavPrefsStore";
 
 export function SidebarNav() {
   const history = useJobsStore((s) => s.history);
+  const hidden = useNavPrefsStore((s) => s.hidden);
+  const visibleItems = navItems.filter((item) => !hidden.has(item.to));
   return (
     <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-border bg-card/30 backdrop-blur-sm">
       <nav className="flex flex-col gap-1 p-3">
-        {items.map((item) => (
+        {visibleItems.length === 0 && (
+          <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+            All pages are hidden. Click the packages icon in the top bar to bring some back.
+          </p>
+        )}
+        {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

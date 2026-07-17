@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
-import { Play, Loader2, Save } from "lucide-react";
+import { Play, Loader2, Save, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { NumberField } from "@/components/common/NumberField";
@@ -18,8 +18,19 @@ import { useFiberStore } from "@/stores/useFiberStore";
 import { useJobsStore } from "@/stores/useJobsStore";
 import type { BPMRequest, BPMResponse, InitialFieldConfig } from "@/types/bpm";
 import { savePreset } from "@/lib/presets";
+import { PresetsDialog } from "@/components/common/PresetsDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import type { FiberConfig } from "@/types/fiber";
+
+interface BpmPreset {
+  fiber: FiberConfig;
+  wavelength_nm: number;
+  length_mm: number;
+  gridSize: number;
+  zSteps: number;
+  initial: InitialFieldConfig;
+}
 
 const defaultInitial: InitialFieldConfig = {
   kind: "gaussian",
@@ -36,6 +47,7 @@ export function BPMPage() {
   const [gridSize, setGridSize] = useState(64);
   const [zSteps, setZSteps] = useState(200);
   const [initial, setInitial] = useState<InitialFieldConfig>(defaultInitial);
+  const [showPresets, setShowPresets] = useState(false);
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -94,8 +106,17 @@ export function BPMPage() {
   function handleSavePreset() {
     const name = prompt("Preset name?", `BPM ${new Date().toLocaleTimeString()}`);
     if (!name) return;
-    savePreset("bpm", name, { fiber, wavelength_nm, length_mm, gridSize, zSteps, initial });
+    savePreset<BpmPreset>("bpm", name, { fiber, wavelength_nm, length_mm, gridSize, zSteps, initial });
     toast.success("Preset saved");
+  }
+
+  function handleLoadPreset(config: BpmPreset) {
+    setFiber(config.fiber);
+    setWavelength(config.wavelength_nm);
+    setLength(config.length_mm);
+    setGridSize(config.gridSize);
+    setZSteps(config.zSteps);
+    setInitial(config.initial);
   }
 
   const result = sock.result;
@@ -108,6 +129,9 @@ export function BPMPage() {
         description="Paraxial split-step Fourier propagator. Watch a launched field evolve along the fiber — perfect for studying tapers, bends, mismatched launches, and double-clad geometries."
         actions={
           <>
+            <Button variant="outline" size="sm" onClick={() => setShowPresets(true)}>
+              <FolderOpen className="h-3.5 w-3.5" /> Load preset
+            </Button>
             <Button variant="outline" size="sm" onClick={handleSavePreset}>
               <Save className="h-3.5 w-3.5" /> Save preset
             </Button>
@@ -259,6 +283,13 @@ export function BPMPage() {
           </Card>
         </div>
       )}
+
+      <PresetsDialog<BpmPreset>
+        kind="bpm"
+        open={showPresets}
+        onClose={() => setShowPresets(false)}
+        onLoad={handleLoadPreset}
+      />
     </div>
   );
 }

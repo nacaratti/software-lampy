@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Play, Loader2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,8 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { NumberField } from "@/components/common/NumberField";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PlotlyChart } from "@/components/plots/PlotlyChart";
+import { ThermalCrossSection } from "@/components/plots/ThermalCrossSection";
 import { api } from "@/lib/api";
 import { decodeArray, reshape2D } from "@/lib/encoding";
+import { useSyncJob } from "@/lib/syncJob";
 import type { ThermalCalculationResponse } from "@/types/thermal";
 
 export function ThermalPage() {
@@ -29,8 +31,16 @@ export function ThermalPage() {
   const [gammaPump, setGammaPump] = useState(0.8);
   const [gammaSignal, setGammaSignal] = useState(0.9);
 
+  // Cross-sections (m²) — initial recommended values for 976 nm pump / 1018 nm signal (Yb³⁺)
+  const [sigmaAbsPump, setSigmaAbsPump] = useState(2.5e-25);
+  const [sigmaEmPump, setSigmaEmPump] = useState(2.7e-25);
+  const [sigmaAbsSignal, setSigmaAbsSignal] = useState(0.4e-25);
+  const [sigmaEmSignal, setSigmaEmSignal] = useState(4.5e-25);
+  const [epsilon, setEpsilon] = useState(0.9);
+
   // Pumps & Seed
   const [pumping, setPumping] = useState<"forward" | "backward" | "bidirectional">("forward");
+  const [method, setMethod] = useState<"analytical" | "rk4">("analytical");
   const [pumpFwd, setPumpFwd] = useState(10.0);
   const [pumpBwd, setPumpBwd] = useState(0.0);
   const [seedPower, setSeedPower] = useState(1.0e-6);
@@ -48,6 +58,46 @@ export function ThermalPage() {
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ThermalCalculationResponse | null>(null);
+  const runSync = useSyncJob();
+
+  // Yb³⁺ cross-section reference tables [wavelength nm, sigma_abs m², sigma_em m²]
+  const getRecommendedSigmas = useCallback((pumpNm: number, signalNm: number) => {
+    const pumpTable: [number, number, number][] = [
+      [900,  0.3e-25, 0.1e-25],
+      [915,  0.9e-25, 0.4e-25],
+      [940,  1.5e-25, 0.8e-25],
+      [960,  2.0e-25, 1.5e-25],
+      [976,  2.5e-25, 2.7e-25],
+      [1000, 0.3e-25, 0.7e-25],
+      [1020, 0.2e-25, 3.8e-25],
+    ];
+    const signalTable: [number, number, number][] = [
+      [1010, 0.2e-25, 3.0e-25],
+      [1018, 0.4e-25, 4.5e-25],
+      [1030, 0.3e-25, 3.5e-25],
+      [1050, 0.15e-25, 2.0e-25],
+      [1064, 0.05e-25, 1.0e-25],
+      [1080, 0.02e-25, 0.4e-25],
+      [1100, 0.01e-25, 0.2e-25],
+    ];
+    function interp(table: [number, number, number][], wl: number): [number, number] {
+      if (wl <= table[0][0]) return [table[0][1], table[0][2]];
+      if (wl >= table[table.length - 1][0]) return [table[table.length - 1][1], table[table.length - 1][2]];
+      for (let i = 0; i < table.length - 1; i++) {
+        if (wl >= table[i][0] && wl <= table[i + 1][0]) {
+          const t = (wl - table[i][0]) / (table[i + 1][0] - table[i][0]);
+          return [
+            table[i][1] + t * (table[i + 1][1] - table[i][1]),
+            table[i][2] + t * (table[i + 1][2] - table[i][2]),
+          ];
+        }
+      }
+      return [table[table.length - 1][1], table[table.length - 1][2]];
+    }
+    const [absP, emP] = interp(pumpTable, pumpNm);
+    const [absS, emS] = interp(signalTable, signalNm);
+    return { sigmaAbsPump: absP, sigmaEmPump: emP, sigmaAbsSignal: absS, sigmaEmSignal: emS };
+  }, []);
 
   async function runSimulation() {
     if (cladRadius <= coreRadius) {
@@ -72,30 +122,42 @@ export function ThermalPage() {
     }
 
     setLoading(true);
+    const req = {
+      fiber_length_m: fiberLength,
+      core_radius_um: coreRadius,
+      clad_radius_um: cladRadius,
+      coating_radius_um: coatingRadius,
+      N_total: nTotal,
+      tau_ms: tauMs,
+      lambda_pump_nm: lambdaPump,
+      lambda_signal_nm: lambdaSignal,
+      gamma_pump: gammaPump,
+      gamma_signal: gammaSignal,
+      P_pump_forward_w: pumpFwd,
+      P_pump_backward_w: pumpBwd,
+      P_signal_seed_w: seedPower,
+      pumping: pumping,
+      method: method,
+      sigma_abs_pump: sigmaAbsPump,
+      sigma_em_pump: sigmaEmPump,
+      sigma_abs_signal: sigmaAbsSignal,
+      sigma_em_signal: sigmaEmSignal,
+      k_core: kCore,
+      k_clad: kClad,
+      k_coat: kCoat,
+      h_conv: hConv,
+      epsilon: epsilon,
+      T_ambient_celsius: tAmbient,
+      num_z_points: numZ,
+      num_r_points: numR,
+    };
     try {
-      const res = await api.calculateThermal({
-        fiber_length_m: fiberLength,
-        core_radius_um: coreRadius,
-        clad_radius_um: cladRadius,
-        coating_radius_um: coatingRadius,
-        N_total: nTotal,
-        tau_ms: tauMs,
-        lambda_pump_nm: lambdaPump,
-        lambda_signal_nm: lambdaSignal,
-        gamma_pump: gammaPump,
-        gamma_signal: gammaSignal,
-        P_pump_forward_w: pumpFwd,
-        P_pump_backward_w: pumpBwd,
-        P_signal_seed_w: seedPower,
-        pumping: pumping,
-        k_core: kCore,
-        k_clad: kClad,
-        k_coat: kCoat,
-        h_conv: hConv,
-        T_ambient_celsius: tAmbient,
-        num_z_points: numZ,
-        num_r_points: numR,
-      });
+      const res = await runSync(
+        "thermal",
+        `Thermal ${fiberLength}m ${pumpFwd + pumpBwd}W`,
+        req,
+        () => api.calculateThermal(req)
+      );
       setResult(res);
       toast.success("Active fiber thermal simulation completed");
     } catch (e) {
@@ -162,6 +224,27 @@ export function ThermalPage() {
                     <SelectItem value="bidirectional">Bidirectional Pump</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Solver Method</Label>
+                <Select
+                  value={method}
+                  onValueChange={(v) => setMethod(v as any)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="analytical">Analytical (Forward-Euler)</SelectItem>
+                    <SelectItem value="rk4">RK4 (scipy.solve_ivp)</SelectItem>
+                  </SelectContent>
+                </Select>
+                {method === "rk4" && pumping !== "forward" && (
+                  <p className="text-[10px] text-amber-500">
+                    RK4 only supports forward pumping; falls back to analytical for {pumping}.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -308,6 +391,77 @@ export function ThermalPage() {
             </CardContent>
           </Card>
 
+          {/* Stimulated Emission / Absorption Cross-Sections */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold">Stimulated Cross-Sections (Yb³⁺)</CardTitle>
+              <CardDescription className="text-xs">
+                Spectroscopic parameters for Yb³⁺. Hints show recommended values interpolated from Digonnet tables for the selected wavelengths.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(() => {
+                const rec = getRecommendedSigmas(lambdaPump, lambdaSignal);
+                const fmt = (v: number) => `${(v * 1e25).toFixed(2)} ×10⁻²⁵ m²`;
+                return (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <NumberField
+                        label="σ_abs (pump)"
+                        unit="m²"
+                        step={1e-26}
+                        min={1e-27}
+                        value={sigmaAbsPump}
+                        onChange={setSigmaAbsPump}
+                        hint={`Rec @ ${lambdaPump} nm: ${fmt(rec.sigmaAbsPump)}`}
+                      />
+                      <NumberField
+                        label="σ_em (pump)"
+                        unit="m²"
+                        step={1e-26}
+                        min={1e-27}
+                        value={sigmaEmPump}
+                        onChange={setSigmaEmPump}
+                        hint={`Rec @ ${lambdaPump} nm: ${fmt(rec.sigmaEmPump)}`}
+                      />
+                      <NumberField
+                        label="σ_abs (signal)"
+                        unit="m²"
+                        step={1e-26}
+                        min={1e-27}
+                        value={sigmaAbsSignal}
+                        onChange={setSigmaAbsSignal}
+                        hint={`Rec @ ${lambdaSignal} nm: ${fmt(rec.sigmaAbsSignal)}`}
+                      />
+                      <NumberField
+                        label="σ_em (signal)"
+                        unit="m²"
+                        step={1e-26}
+                        min={1e-27}
+                        value={sigmaEmSignal}
+                        onChange={setSigmaEmSignal}
+                        hint={`Rec @ ${lambdaSignal} nm: ${fmt(rec.sigmaEmSignal)}`}
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => {
+                        setSigmaAbsPump(rec.sigmaAbsPump);
+                        setSigmaEmPump(rec.sigmaEmPump);
+                        setSigmaAbsSignal(rec.sigmaAbsSignal);
+                        setSigmaEmSignal(rec.sigmaEmSignal);
+                      }}
+                    >
+                      Apply recommended values for {lambdaPump}/{lambdaSignal} nm
+                    </Button>
+                  </>
+                );
+              })()}
+            </CardContent>
+          </Card>
+
           {/* Cooling & Thermal Constants */}
           <Card>
             <CardHeader className="pb-3">
@@ -331,6 +485,15 @@ export function ThermalPage() {
                 max={1000.0}
                 value={hConv}
                 onChange={setHConv}
+              />
+              <NumberField
+                label="Emissivity (ε)"
+                step={0.05}
+                min={0.0}
+                max={1.0}
+                value={epsilon}
+                onChange={setEpsilon}
+                hint="Surface radiative emissivity (0=mirror, 1=blackbody)"
               />
               <NumberField
                 label="Core Conductivity"
@@ -400,7 +563,7 @@ export function ThermalPage() {
                   <CardContent className="p-4 text-center">
                     <div className="text-[10px] text-muted-foreground uppercase font-medium">Output Power</div>
                     <div className="text-xl font-bold mt-1 text-primary">
-                      {result.output_power_w.toFixed(2)} W
+                      {result.output_power_w != null ? result.output_power_w.toFixed(2) : "—"} W
                     </div>
                   </CardContent>
                 </Card>
@@ -408,7 +571,7 @@ export function ThermalPage() {
                   <CardContent className="p-4 text-center">
                     <div className="text-[10px] text-muted-foreground uppercase font-medium">Slope Efficiency</div>
                     <div className="text-xl font-bold mt-1 text-emerald-400">
-                      {(result.efficiency * 100).toFixed(1)}%
+                      {result.efficiency != null ? (result.efficiency * 100).toFixed(1) : "—"}%
                     </div>
                   </CardContent>
                 </Card>
@@ -416,7 +579,7 @@ export function ThermalPage() {
                   <CardContent className="p-4 text-center">
                     <div className="text-[10px] text-muted-foreground uppercase font-medium">Amplifier Gain</div>
                     <div className="text-xl font-bold mt-1 text-cyan-400">
-                      {result.gain_db.toFixed(1)} dB
+                      {result.gain_db != null ? result.gain_db.toFixed(1) : "—"} dB
                     </div>
                   </CardContent>
                 </Card>
@@ -424,28 +587,22 @@ export function ThermalPage() {
                   <CardContent className="p-4 text-center">
                     <div className="text-[10px] text-muted-foreground uppercase font-medium">Peak Temperature</div>
                     <div className="text-xl font-bold mt-1 text-rose-500">
-                      {result.T_max_celsius.toFixed(1)} °C
+                      {result.T_max_celsius != null ? result.T_max_celsius.toFixed(1) : "—"} °C
                     </div>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Power Distribution Plot */}
+              {/* Power Distribution Plot — same curves as MATLAB reference */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-sm font-semibold">Optical Power Distribution along Fiber Length</CardTitle>
+                  <CardTitle className="text-sm font-semibold">
+                    Evolution of {pumping === "forward" ? "Forward" : pumping === "backward" ? "Backward" : "Two-end"} pump and laser powers along the fiber
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="p-2">
                   <PlotlyChart
                     data={[
-                      {
-                        x: result.z_m,
-                        y: result.signals_forward,
-                        type: "scatter" as any,
-                        mode: "lines" as any,
-                        name: "Signal Power P_s(z)",
-                        line: { color: "#10B981", width: 2.5 },
-                      },
                       ...(pumping === "forward" || pumping === "bidirectional"
                         ? [
                             {
@@ -453,8 +610,8 @@ export function ThermalPage() {
                               y: result.pumps_forward,
                               type: "scatter" as any,
                               mode: "lines" as any,
-                              name: "Forward Pump P_pf(z)",
-                              line: { color: "#3B82F6", width: 2, dash: "dash" as any },
+                              name: "P+ pump",
+                              line: { color: "#EF4444", width: 2 },
                             },
                           ]
                         : []),
@@ -465,26 +622,43 @@ export function ThermalPage() {
                               y: result.pumps_backward,
                               type: "scatter" as any,
                               mode: "lines" as any,
-                              name: "Backward Pump P_pb(z)",
-                              line: { color: "#EC4899", width: 2, dash: "dash" as any },
+                              name: "P- pump",
+                              line: { color: "#3B82F6", width: 2, dash: "dash" as any },
                             },
                           ]
                         : []),
                       {
                         x: result.z_m,
-                        y: result.pumps_total,
+                        y: result.signals_forward,
                         type: "scatter" as any,
                         mode: "lines" as any,
-                        name: "Total Pump P_p(z)",
-                        line: { color: "#FBBF24", width: 2 },
+                        name: "P+ signal",
+                        line: { color: "#06B6D4", width: 2.5 },
+                      },
+                      {
+                        x: result.z_m,
+                        y: result.signals_backward,
+                        type: "scatter" as any,
+                        mode: "lines" as any,
+                        name: "P- signal",
+                        line: { color: "#0F172A", width: 2, dash: "dashdot" as any },
+                      },
+                      {
+                        x: result.z_m,
+                        y: result.pump_output_w,
+                        type: "scatter" as any,
+                        mode: "markers" as any,
+                        name: "P_out",
+                        marker: { color: "#22D3EE", symbol: "circle-open", size: 6 },
                       },
                     ]}
                     layout={{
-                      xaxis: { title: { text: "Position z (m)" }, zeroline: false },
-                      yaxis: { title: { text: "Power (W)" }, rangemode: "nonnegative" },
+                      xaxis: { title: { text: "Length [m]" }, zeroline: false },
+                      yaxis: { title: { text: "Power [W]" }, rangemode: "nonnegative" },
                       margin: { t: 10, r: 20, b: 40, l: 50 },
+                      legend: { orientation: "h" as any, y: -0.2 },
                     }}
-                    height={300}
+                    height={320}
                   />
                 </CardContent>
               </Card>
@@ -551,6 +725,25 @@ export function ThermalPage() {
                       margin: { t: 10, r: 10, b: 40, l: 50 },
                     }}
                     height={320}
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Circular fiber cross-section, revolved from T(r) at a chosen z */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm font-semibold">Fiber Cross-Section — Temperature</CardTitle>
+                  <CardDescription className="text-xs">
+                    Radial profile revolved into the actual disc shape, like a thermal camera facing the fiber end.
+                    Drag the slider to move along the fiber.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-2">
+                  <ThermalCrossSection
+                    rUm={result.r_um}
+                    t2d={t2dData}
+                    zM={result.z_m}
+                    colorscale={thermalColorscale}
                   />
                 </CardContent>
               </Card>

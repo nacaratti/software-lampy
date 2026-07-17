@@ -1,28 +1,22 @@
 """Live preview endpoint: refractive index profile n(r)."""
 from __future__ import annotations
-import logging
 import math
-import traceback
 import numpy as np
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
+from backend.app.errors import run_solver
 from backend.app.schemas.fiber import (
     IndexProfilePreviewRequest,
     IndexProfilePreviewResponse,
 )
 from backend.app.services.fiber_builder import build_fiber
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/fibers", tags=["fibers"])
 
 
 @router.post("/preview-index", response_model=IndexProfilePreviewResponse)
 def preview_index(req: IndexProfilePreviewRequest) -> IndexProfilePreviewResponse:
-    try:
-        return _preview_index_impl(req)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("preview_index failed")
-        raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+    return run_solver(_preview_index_impl, req)
 
 
 def _preview_index_impl(req: IndexProfilePreviewRequest) -> IndexProfilePreviewResponse:

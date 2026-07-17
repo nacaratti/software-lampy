@@ -12,6 +12,7 @@ from fibersim.solvers.modes.fd import solve_modes_fd
 from fibersim.solvers.modes.solver_2d import solve_modes_2d
 from fibersim.solvers.power.ase import solve_ase
 from fibersim.solvers.propagation.bpm import solve_bpm
+from fibersim.solvers.propagation.gnlse import solve_gnlse
 
 from backend.app.schemas.modes import (
     ModeAnalyticalRequest,
@@ -23,6 +24,7 @@ from backend.app.schemas.modes import (
 from backend.app.schemas.fiber import StepIndexConfig
 from backend.app.schemas.power import PowerASERequest, PowerASEResponse
 from backend.app.schemas.bpm import BPMRequest, BPMResponse
+from backend.app.schemas.gnlse import GNLSERequest, GNLSEResponse
 from backend.app.services.fiber_builder import (
     build_fiber,
     build_active_fiber,
@@ -379,4 +381,102 @@ def run_bpm(
         intensity_slices=encode_array(intensity),
         power_vs_z=result.powers.tolist(),
         z_step_indices=idxs.tolist(),
+    )
+
+
+_DB_TO_LIN = math.log(10.0) / 10.0  # dB -> 1/m (power) or dB -> Np (amplitude context)
+
+
+def _build_gnlse_initial_envelope(req: GNLSERequest) -> tuple[np.ndarray, np.ndarray]:
+    """Builds the time grid (s) and complex initial envelope (sqrt(W)) for a
+    transform-limited pulse of the requested shape/FWHM/peak power."""
+    window_s = req.time_window_ps * 1e-12
+    t = np.linspace(-window_s / 2.0, window_s / 2.0, req.num_points, endpoint=False)
+    fwhm_s = req.duration_fs * 1e-15
+    amp0 = math.sqrt(req.peak_power_w)
+
+    if req.pulse_shape == "gaussian":
+        # Intensity FWHM convention: |A|^2 = P0 * exp(-4*ln2*(t/FWHM)^2)
+        envelope = amp0 * np.exp(-2.0 * math.log(2.0) * (t / fwhm_s) ** 2)
+    else:  # sech2
+        # Intensity FWHM T_fwhm = 2*asinh(1)*T0 => T0 = T_fwhm / (2*asinh(1))
+        t0 = fwhm_s / (2.0 * math.asinh(1.0))
+        envelope = amp0 / np.cosh(t / t0)
+
+    return t.astype(np.float64), envelope.astype(complex)
+
+
+def run_gnlse(
+    req: GNLSERequest,
+    progress_callback: Optional[Callable[[float], Optional[bool]]] = None,
+) -> GNLSEResponse:
+    wl_m = req.wavelength_nm * 1e-9
+    length_m = req.length_mm * 1e-3
+    gamma_per_w_per_m = req.gamma_per_w_per_km * 1e-3
+    beta2_s2_per_m = req.beta2_ps2_per_km * 1e-27  # ps^2/km -> s^2/m
+    beta3_s3_per_m = req.beta3_ps3_per_km * 1e-39  # ps^3/km -> s^3/m
+
+    time_grid, initial_envelope = _build_gnlse_initial_envelope(req)
+
+    gain_per_m = 0.0
+    saturation_energy_j: Optional[float] = None
+    gain_bandwidth_hz: Optional[float] = None
+    if req.enable_gain:
+        gain_per_m = req.small_signal_gain_db_per_m * _DB_TO_LIN
+        if req.saturation_energy_nj is not None:
+            saturation_energy_j = req.saturation_energy_nj * 1e-9
+        if req.gain_bandwidth_nm is not None:
+            c_val = 299792458.0
+            gain_bandwidth_hz = c_val * (req.gain_bandwidth_nm * 1e-9) / (wl_m ** 2)
+
+    result = solve_gnlse(
+        time_grid=time_grid,
+        initial_envelope=initial_envelope,
+        length=length_m,
+        wavelength_zero=wl_m,
+        gamma=gamma_per_w_per_m,
+        beta_list=[beta2_s2_per_m, beta3_s3_per_m],
+        loss_db_per_m=req.loss_db_per_m,
+        self_steepening=req.self_steepening,
+        raman=req.raman,
+        z_steps=req.z_steps,
+        small_signal_gain_per_m=gain_per_m,
+        saturation_energy_j=saturation_energy_j,
+        gain_bandwidth_hz=gain_bandwidth_hz,
+    )
+
+    if progress_callback is not None:
+        progress_callback(1.0)
+
+    dt = float(time_grid[1] - time_grid[0])
+    temporal_power = result.temporal_power  # (z_steps, N), W
+    spectral_power = result.spectral_power  # (z_steps, N), a.u.
+
+    n_keep = min(req.save_z_slices, req.z_steps)
+    idxs = np.linspace(0, req.z_steps - 1, n_keep).astype(int)
+
+    input_energy_j = float(np.sum(temporal_power[0, :]) * dt)
+    output_energy_j = float(np.sum(temporal_power[-1, :]) * dt)
+
+    # result.frequencies is a baseband offset (Hz) from the carrier — add the
+    # carrier frequency back to get absolute wavelength per bin.
+    c_val = 299792458.0
+    absolute_freq_hz = result.frequencies + c_val / wl_m
+    wavelength_nm = (c_val / absolute_freq_hz * 1e9)
+
+    return GNLSEResponse(
+        z_mm=(result.z[idxs] * 1e3).tolist(),
+        t_ps=(result.t * 1e12).tolist(),
+        wavelength_nm=wavelength_nm.tolist(),
+        temporal_power_slices=encode_array(temporal_power[idxs, :].astype(np.float32)),
+        spectral_power_slices=encode_array(spectral_power[idxs, :].astype(np.float32)),
+        input_temporal_power_w=temporal_power[0, :].tolist(),
+        output_temporal_power_w=temporal_power[-1, :].tolist(),
+        input_spectral_power=spectral_power[0, :].tolist(),
+        output_spectral_power=spectral_power[-1, :].tolist(),
+        input_energy_nj=input_energy_j * 1e9,
+        output_energy_nj=output_energy_j * 1e9,
+        saturated_gain_db_per_m=(
+            result.saturated_gain_per_m / _DB_TO_LIN if result.saturated_gain_per_m is not None else None
+        ),
     )

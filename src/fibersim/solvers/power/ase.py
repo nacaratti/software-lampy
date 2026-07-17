@@ -110,7 +110,15 @@ def solve_ase(
             'sig_e': sig_e,
             'R1': 0.0,
             'R2': 0.0,
-            'ase_band': 0.0 # spontaneous source is zero
+            'ase_band': 0.0, # spontaneous source is zero
+            # Pump quantum yield: ions excited to the metastable level per
+            # absorbed pump photon. >1.0 models cross-relaxation upconversion
+            # pumping (e.g. Tm3+ 790nm "2-for-1"), where the surplus photon
+            # energy non-radiatively kicks a second neighboring ion up too —
+            # this changes only the *population* balance, not the photon
+            # accounting (the pump beam still loses exactly one photon's
+            # worth of energy per absorption event).
+            'qy': p.get('quantum_yield', 1.0),
         })
         
     # Add Signals
@@ -139,20 +147,32 @@ def solve_ase(
     ase_wls = np.linspace(wl_min, wl_max, n_ase)
     dwl = (wl_max - wl_min) / (n_ase - 1) if n_ase > 1 else 10e-9
 
+    def _ase_cfg(key: str, idx: int, default: float = 0.0) -> float:
+        """ASE config values may be scalars or per-channel sequences.
+
+        Per-channel arrays let system-level callers impose wavelength-dependent
+        cavity reflectivities (FBG spectra) and inject ASE arriving from a
+        previous amplifier stage.
+        """
+        val = ase_config.get(key, default)
+        if isinstance(val, (list, tuple, np.ndarray)):
+            return float(val[idx])
+        return float(val)
+
     for a_idx, wl in enumerate(ase_wls):
         sig_a, sig_e = ion.get_cross_sections(wl)
         channels.append({
             'type': 'ase',
             'index': a_idx,
             'wavelength': wl,
-            'power_in_f': 0.0,
-            'power_in_b': 0.0,
-            'loss': ase_config.get('loss', 0.0),
-            'overlap': ase_config.get('overlap', 1.0),
+            'power_in_f': _ase_cfg('power_in_f', a_idx),
+            'power_in_b': _ase_cfg('power_in_b', a_idx),
+            'loss': _ase_cfg('loss', a_idx),
+            'overlap': _ase_cfg('overlap', a_idx, 1.0),
             'sig_a': sig_a,
             'sig_e': sig_e,
-            'R1': ase_config.get('R1', 0.0),
-            'R2': ase_config.get('R2', 0.0),
+            'R1': _ase_cfg('R1', a_idx),
+            'R2': _ase_cfg('R2', a_idx),
             'ase_dwl': dwl,
         })
 
@@ -174,11 +194,13 @@ def solve_ase(
     gamma_arr = np.array([ch['overlap'] for ch in channels])
     loss_arr = np.array([ch['loss'] for ch in channels])
     wl_arr = np.array([ch['wavelength'] for ch in channels])
+    qy_arr = np.array([ch.get('qy', 1.0) for ch in channels])
     is_ase_ch = np.array([ch['type'] == 'ase' for ch in channels])
     is_pump_sig = np.array([ch['type'] in ('pump', 'signal') for ch in channels])
     ase_dwl_arr = np.array([ch.get('ase_dwl', 0.0) for ch in channels])
     # Max |g| per step (1/m) — avoids exp() overflow on long fibers / high doping
     g_max = 200.0
+    c_up = float(getattr(ion, 'upconversion_coeff_m3_s', 0.0))
 
     # Progress throttle: report at most ~100 times across all iterations
     progress_stride = max(1, max_iterations // 100)
@@ -188,12 +210,22 @@ def solve_ase(
         p_loc = P_f[:, i]
         if include_backward:
             p_loc = p_loc + P_b[:, i]
-        w_abs = np.sum(p_loc * sig_a_arr * gamma_arr / (h_nu * area_core))
+        # qy_arr > 1 on cross-relaxation pump channels means each absorbed
+        # photon populates more than one ion — only the population balance
+        # (this rate) sees that boost, not the photon-propagation gain `g`.
+        w_abs = np.sum(p_loc * sig_a_arr * gamma_arr * qy_arr / (h_nu * area_core))
         w_em = np.sum(p_loc * sig_e_arr * gamma_arr / (h_nu * area_core))
-        denom = w_abs + w_em + 1.0 / ion.lifetime
-        if denom <= 0.0:
+        decay_rate = w_abs + w_em + 1.0 / ion.lifetime
+        if decay_rate <= 0.0:
             return 0.0
-        return min(max(w_abs / denom, 0.0), 1.0)
+        if c_up <= 0.0:
+            return min(max(w_abs / decay_rate, 0.0), 1.0)
+        # Cooperative upconversion adds an N2-dependent decay path
+        # (N2/tau -> N2/tau + C_up*N2^2), making the steady-state balance
+        # quadratic in N2: C_up*N2^2 + decay_rate*N2 - N_total*w_abs = 0.
+        discriminant = decay_rate ** 2 + 4.0 * c_up * N_total * w_abs
+        n2_dens = (-decay_rate + math.sqrt(max(discriminant, 0.0))) / (2.0 * c_up)
+        return min(max(n2_dens / N_total, 0.0), 1.0)
 
     def _g_and_s_ase(i: int, *, include_backward: bool) -> tuple[np.ndarray, np.ndarray]:
         n2_frac = _n2_fraction_at(i, include_backward=include_backward)
