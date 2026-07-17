@@ -1,3 +1,10 @@
+"""Analytical LP-mode theory for step-index fibers (Gloge approximation).
+
+UNITS: these functions are unit-agnostic in length — `core_radius` and
+`wavelength` only need to share the SAME length unit (SI meters recommended,
+matching the rest of fibersim). `beta` is returned in the reciprocal of that
+unit; `n_eff`, `u`, `w` and V are dimensionless.
+"""
 import math
 import numpy as np
 from scipy.special import jv, kn
@@ -5,16 +12,16 @@ from scipy.optimize import minimize_scalar
 
 class Mode:
     """Class used to store parameters of a mode, and to plot it.
-    
+
     Attributes:
         u (float): Radial propagation constant in the core.
         w (float): Radial propagation constant in the cladding.
         l (int): Azimuthal mode number.
         m (int): Radial mode number.
-        beta (float): Propagation constant of the mode.
+        beta (float): Propagation constant of the mode (1/[length unit used]).
         n_eff (float): Effective refractive index of the mode.
-        core_radius (float): Radius of the fibre core (microns).
-        wavelength (float): Wavelength of the light in the mode (microns).
+        core_radius (float): Radius of the fibre core (same length unit as wavelength).
+        wavelength (float): Wavelength of the light in the mode (same length unit as core_radius).
         n_core (float): Refractive index of the fibre core.
         n_cladding (float): Refractive index of the cladding.
     """

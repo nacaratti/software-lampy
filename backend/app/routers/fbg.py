@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from backend.app.errors import run_solver
 from backend.app.schemas.fbg import (
     FBGCalculationRequest, FBGCalculationResponse,
     PhaseMaskRequest, PhaseMaskResponse,
@@ -16,7 +17,10 @@ router = APIRouter(prefix="/api/fbg", tags=["fbg"])
 
 @router.post("/calculate", response_model=FBGCalculationResponse)
 def calculate_fbg(req: FBGCalculationRequest) -> FBGCalculationResponse:
-    try:
+    return run_solver(_calculate_fbg_impl, req)
+
+
+def _calculate_fbg_impl(req: FBGCalculationRequest) -> FBGCalculationResponse:
         if req.grating_type == "uniform":
             wl_start = req.wl_start_nm if req.wl_start_nm is not None else (2 * req.n_eff * req.period_nm * 1e-9) * 1e9 - 5.0
             wl_end = req.wl_end_nm if req.wl_end_nm is not None else (2 * req.n_eff * req.period_nm * 1e-9) * 1e9 + 5.0
@@ -81,20 +85,21 @@ def calculate_fbg(req: FBGCalculationRequest) -> FBGCalculationResponse:
                 num_points=req.num_points,
             )
         else:
-            raise HTTPException(status_code=400, detail=f"Unsupported grating type: {req.grating_type}")
-        
+            raise HTTPException(status_code=422, detail=f"Unsupported grating type: {req.grating_type}")
+
         return FBGCalculationResponse(
             wavelengths_nm=wls.tolist(),
             spectrum=spec.tolist(),
             metadata=meta,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"FBG simulation error: {str(e)}")
 
 
 @router.post("/phase-mask", response_model=PhaseMaskResponse)
 def get_phase_mask(req: PhaseMaskRequest) -> PhaseMaskResponse:
-    try:
+    return run_solver(_get_phase_mask_impl, req)
+
+
+def _get_phase_mask_impl(req: PhaseMaskRequest) -> PhaseMaskResponse:
         result = calculate_phase_mask(
             grating_type=req.grating_type,
             n_eff=req.n_eff,
@@ -109,5 +114,3 @@ def get_phase_mask(req: PhaseMaskRequest) -> PhaseMaskResponse:
             num_sections=req.num_sections,
         )
         return PhaseMaskResponse(**result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Phase mask error: {str(e)}")

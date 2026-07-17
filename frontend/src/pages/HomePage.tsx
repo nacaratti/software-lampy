@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import {
   ArrowRight, Aperture, Zap, Waves, Grid3X3, Link as LinkIcon,
-  Thermometer, Library, Cpu, BookOpen, Layers, Play,
+  Thermometer, Library, Cpu, BookOpen, Layers, Play, GitFork, Triangle, Sparkles, FlaskConical,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,14 @@ const solverCards = [
     accent: "text-fuchsia-300",
   },
   {
+    to: "/gnlse",
+    title: "Ultrafast Pulse (GNLSE)",
+    icon: Sparkles,
+    description: "Split-step Fourier solver for the Generalized Nonlinear Schrödinger Equation — self-phase modulation, Raman scattering, self-steepening, and an optional saturable-gain pass for pulsed fiber amplifiers.",
+    color: "from-indigo-500/40 via-indigo-500/10 to-transparent",
+    accent: "text-indigo-300",
+  },
+  {
     to: "/thermal",
     title: "Thermal Simulator",
     icon: Thermometer,
@@ -59,6 +67,22 @@ const solverCards = [
     description: "Splice loss via field overlap integral between two fibers with lateral, angular, and waist misalignment.",
     color: "from-teal-500/30 via-teal-500/10 to-transparent",
     accent: "text-teal-300",
+  },
+  {
+    to: "/coupler",
+    title: "Fiber Coupler",
+    icon: GitFork,
+    description: "Directional coupler via coupled-mode theory: power exchange along z, spectral splitting ratio, and coupling coefficient vs. wavelength.",
+    color: "from-amber-500/30 via-amber-500/10 to-transparent",
+    accent: "text-amber-300",
+  },
+  {
+    to: "/taper",
+    title: "Tapered Fiber",
+    icon: Triangle,
+    description: "Biconical taper adiabaticity via the Love & Henry criterion. Mode-field evolution, V-number, and transmission along the taper profile.",
+    color: "from-emerald-500/30 via-emerald-500/10 to-transparent",
+    accent: "text-emerald-300",
   },
 ];
 
@@ -77,11 +101,21 @@ const platformCards = [
     to: "/system",
     title: "Laser System Builder",
     icon: Cpu,
-    description: "Assemble a complete fiber laser schematic by dragging blocks — fibers, FBGs, couplers, and pump sources — onto a canvas and connecting optical ports.",
+    description: "Assemble a complete fiber laser schematic — fibers, FBGs, couplers, and pump sources — then simulate it and inspect the output with a spectrum analyzer, power meter, and CCD-style M² beam profiler.",
     color: "from-sky-500/40 via-sky-500/10 to-transparent",
     accent: "text-sky-300",
-    badge: "In development",
-    badgeVariant: "secondary" as const,
+    badge: "New",
+    badgeVariant: "success" as const,
+  },
+  {
+    to: "/power-ramp",
+    title: "Power Ramp Explorer",
+    icon: FlaskConical,
+    description: "Sweep pump power for a single fiber and watch SRS, SBS, photodarkening, TMI, and Tm/Er ESA-upconversion approach their limits — a fast diagnostic-level effects explorer built on the same engine as the System Builder.",
+    color: "from-rose-500/40 via-rose-500/10 to-transparent",
+    accent: "text-rose-300",
+    badge: "New",
+    badgeVariant: "success" as const,
   },
 ];
 
@@ -89,10 +123,6 @@ const roadmapItems = [
   {
     title: "Run comparison",
     desc: "Side-by-side overlay of any two simulations from history",
-  },
-  {
-    title: "GNLSE — ultrashort pulses",
-    desc: "Pulse propagation with Raman, self-steepening, and higher-order dispersion",
   },
   {
     title: "Report export",

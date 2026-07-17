@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import {
   Plus, Trash2, Pencil, X, Check, Search, ChevronRight,
@@ -20,6 +20,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { api } from "@/lib/api";
 import type { Device, DeviceType, DeviceCreate } from "@/types/device";
 import { defaultParams, deviceTypeLabels } from "@/types/device";
+import { type ParamFormHandle } from "@/components/devices/ParamForm";
+import { TypedParamEditor } from "@/components/devices/TypedParamEditor";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,44 +77,6 @@ function ParamTable({ params }: { params: Record<string, unknown> }) {
 }
 
 // ---------------------------------------------------------------------------
-// Parameter editor: JSON textarea
-// ---------------------------------------------------------------------------
-
-function ParamEditor({
-  value,
-  onChange,
-}: {
-  value: Record<string, unknown>;
-  onChange: (v: Record<string, unknown>) => void;
-}) {
-  const [text, setText] = useState(() => JSON.stringify(value, null, 2));
-  const [err, setErr] = useState("");
-
-  function handleChange(t: string) {
-    setText(t);
-    try {
-      const parsed = JSON.parse(t);
-      setErr("");
-      onChange(parsed);
-    } catch {
-      setErr("Invalid JSON");
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-1">
-      <textarea
-        className="w-full h-52 rounded-md border border-border bg-background font-mono text-xs p-2 resize-y focus:outline-none focus:ring-1 focus:ring-ring"
-        value={text}
-        onChange={(e) => handleChange(e.target.value)}
-        spellCheck={false}
-      />
-      {err && <p className="text-xs text-destructive">{err}</p>}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Create dialog
 // ---------------------------------------------------------------------------
 
@@ -134,6 +98,7 @@ function CreateDialog({
   const [partNumber, setPartNumber] = useState("");
   const [params, setParams] = useState<Record<string, unknown>>(defaultParams.fiber_active);
   const [saving, setSaving] = useState(false);
+  const paramRef = useRef<ParamFormHandle>(null);
 
   function handleTypeChange(t: DeviceType) {
     setDeviceType(t);
@@ -142,6 +107,8 @@ function CreateDialog({
 
   async function handleCreate() {
     if (!name.trim()) { toast.error("Name is required"); return; }
+    const parameters = await paramRef.current?.getValues();
+    if (!parameters) { toast.error("Fix the highlighted parameters before saving"); return; }
     setSaving(true);
     try {
       const body: DeviceCreate = {
@@ -151,7 +118,7 @@ function CreateDialog({
         category: "custom",
         manufacturer,
         part_number: partNumber,
-        parameters: params,
+        parameters,
       };
       const created = await api.createDevice(body);
       toast.success("Device created");
@@ -214,9 +181,9 @@ function CreateDialog({
             </div>
 
             <div className="col-span-2">
-              <Label>Parameters (JSON)</Label>
-              <p className="text-[11px] text-muted-foreground mb-1">Pre-filled with template for {deviceTypeLabels[deviceType]}.</p>
-              <ParamEditor value={params} onChange={setParams} />
+              <Label>Parameters</Label>
+              <p className="text-[11px] text-muted-foreground mb-2">Pre-filled with template for {deviceTypeLabels[deviceType]}.</p>
+              <TypedParamEditor ref={paramRef} kind={deviceType} values={params} onJsonChange={setParams} />
             </div>
           </div>
 
@@ -251,13 +218,16 @@ function EditDialog({
   const [partNumber, setPartNumber] = useState(device.part_number);
   const [params, setParams] = useState<Record<string, unknown>>(device.parameters);
   const [saving, setSaving] = useState(false);
+  const paramRef = useRef<ParamFormHandle>(null);
 
   async function handleSave() {
     if (!name.trim()) { toast.error("Name is required"); return; }
+    const parameters = await paramRef.current?.getValues();
+    if (!parameters) { toast.error("Fix the highlighted parameters before saving"); return; }
     setSaving(true);
     try {
       const updated = await api.updateDevice(device.id, {
-        name: name.trim(), description, manufacturer, part_number: partNumber, parameters: params,
+        name: name.trim(), description, manufacturer, part_number: partNumber, parameters,
       });
       toast.success("Device updated");
       onSaved(updated);
@@ -296,8 +266,13 @@ function EditDialog({
               <Input value={description} onChange={(e) => setDescription(e.target.value)} className="mt-1" />
             </div>
             <div className="col-span-2">
-              <Label>Parameters (JSON)</Label>
-              <ParamEditor value={params} onChange={setParams} />
+              <Label>Parameters</Label>
+              <TypedParamEditor
+                ref={paramRef}
+                kind={device.device_type}
+                values={params}
+                onJsonChange={setParams}
+              />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -347,7 +322,7 @@ function DeviceDetail({
             </div>
           </div>
         </div>
-        <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8" onClick={onClose} aria-label="Close device details">
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -450,6 +425,7 @@ export function DeviceLibraryPage() {
 
   async function handleDelete() {
     if (!selected) return;
+    if (!window.confirm(`Delete "${selected.name}"? This cannot be undone.`)) return;
     setDeleting(true);
     try {
       await api.deleteDevice(selected.id);

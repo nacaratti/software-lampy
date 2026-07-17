@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
-import { Play, Loader2, Save } from "lucide-react";
+import { Play, Loader2, Save, FolderOpen, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -15,14 +15,24 @@ import { Label } from "@/components/ui/label";
 import { NumberField } from "@/components/common/NumberField";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { FiberConfigForm } from "@/components/fiber/FiberConfigForm";
+import { FiberCatalogDialog } from "@/components/fiber/FiberCatalogDialog";
 import { IndexProfilePreview } from "@/components/fiber/IndexProfilePreview";
 import { ModeListPanel } from "@/components/plots/ModeListPanel";
 import { api } from "@/lib/api";
 import type { ModesResponse } from "@/types/modes";
 import { useFiberStore } from "@/stores/useFiberStore";
 import { savePreset } from "@/lib/presets";
+import { PresetsDialog } from "@/components/common/PresetsDialog";
+import type { FiberConfig } from "@/types/fiber";
 
 type Method = "analytical" | "fd" | "2d";
+
+interface ModeSolverPreset {
+  fiber: FiberConfig;
+  wavelength_nm: number;
+  method: Method;
+  l: number;
+}
 
 export function ModeSolverPage() {
   const { fiber, setFiber, wavelength_nm, setWavelength } = useFiberStore();
@@ -30,6 +40,8 @@ export function ModeSolverPage() {
   const [l, setL] = useState(0);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ModesResponse | null>(null);
+  const [showPresets, setShowPresets] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
 
   async function runSolve() {
     setLoading(true);
@@ -86,8 +98,15 @@ export function ModeSolverPage() {
   function handleSavePreset() {
     const name = prompt("Preset name?", `Modes ${new Date().toLocaleTimeString()}`);
     if (!name) return;
-    savePreset("mode-solver", name, { fiber, wavelength_nm, method, l });
+    savePreset<ModeSolverPreset>("mode-solver", name, { fiber, wavelength_nm, method, l });
     toast.success("Preset saved");
+  }
+
+  function handleLoadPreset(config: ModeSolverPreset) {
+    setFiber(config.fiber);
+    setWavelength(config.wavelength_nm);
+    setMethod(config.method);
+    setL(config.l);
   }
 
   return (
@@ -98,6 +117,14 @@ export function ModeSolverPage() {
         description="Compute guided LP modes and visualize field intensities. Three methods: analytical (step-index), radial finite differences, and full 2D."
         actions={
           <>
+            <Button variant="outline" size="sm" onClick={() => setShowCatalog(true)}>
+              <Library className="h-3.5 w-3.5" />
+              Load from catalog
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowPresets(true)}>
+              <FolderOpen className="h-3.5 w-3.5" />
+              Load preset
+            </Button>
             <Button variant="outline" size="sm" onClick={handleSavePreset}>
               <Save className="h-3.5 w-3.5" />
               Save preset
@@ -173,6 +200,19 @@ export function ModeSolverPage() {
           Configure your fiber and press <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">⌘ Enter</kbd> to compute modes.
         </div>
       )}
+
+      <PresetsDialog<ModeSolverPreset>
+        kind="mode-solver"
+        open={showPresets}
+        onClose={() => setShowPresets(false)}
+        onLoad={handleLoadPreset}
+      />
+
+      <FiberCatalogDialog
+        open={showCatalog}
+        onClose={() => setShowCatalog(false)}
+        onLoad={(loadedFiber) => setFiber(loadedFiber)}
+      />
     </div>
   );
 }

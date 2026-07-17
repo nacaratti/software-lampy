@@ -1,0 +1,31 @@
+# Lampy / fibersim — Python dependencies (Python >= 3.10)
+#
+# From the project root:
+#   python -m venv .venv
+#   .venv\Scripts\activate          # Windows
+#   source .venv/bin/activate       # Linux / macOS
+#   pip install -r requirements.txt
+#
+# Frontend (separate): cd frontend && npm install
+#
+# Dev tools (pytest, ruff, …): pip install -r requirements-dev.txt
+
+# --- fibersim core (physics library) ---
+numpy>=2.0.0
+scipy>=1.12.0
+matplotlib>=3.8.0
+pydantic>=2.6.0
+pint>=0.23
+requests>=2.31.0
+python-dotenv>=1.0.1
+
+# --- backend API (FastAPI + jobs + device library) ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+websockets>=13.0
+anyio>=4.4.0
+pydantic-settings>=2.5.0
+sqlalchemy>=2.0.0
+
+# Local package — registers the fibersim import path (fixes ModuleNotFoundError)
+-e .

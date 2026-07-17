@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from backend.app.errors import run_solver
 from backend.app.schemas.splicing import SplicingCalculationRequest, SplicingCalculationResponse
 from backend.app.services.encoders import encode_array
 from fibersim.solvers.modes.splicing import calculate_splicing_overlap
@@ -7,7 +8,10 @@ router = APIRouter(prefix="/api/splicing", tags=["splicing"])
 
 @router.post("/calculate", response_model=SplicingCalculationResponse)
 def calculate_splicing(req: SplicingCalculationRequest) -> SplicingCalculationResponse:
-    try:
+    return run_solver(_calculate_splicing_impl, req)
+
+
+def _calculate_splicing_impl(req: SplicingCalculationRequest) -> SplicingCalculationResponse:
         res = calculate_splicing_overlap(
             core_n1=req.core_n1,
             cladding_n1=req.cladding_n1,
@@ -32,5 +36,3 @@ def calculate_splicing(req: SplicingCalculationRequest) -> SplicingCalculationRe
             field_2=encode_array(res['field_2']),
             extent_um=res['extent_um'],
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Splicing simulation error: {str(e)}")

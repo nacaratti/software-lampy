@@ -10,6 +10,7 @@ export function BPMPowerVsZ({ response, height = 240 }: BPMPowerVsZProps) {
   return (
     <PlotlyChart
       height={height}
+      exportFilename="bpm_power_vs_z"
       data={[
         {
           x: response.z_mm,

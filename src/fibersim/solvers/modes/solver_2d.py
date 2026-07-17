@@ -2,6 +2,7 @@ import math
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+from scipy.interpolate import RegularGridInterpolator
 from typing import List, Tuple, Union
 from pint import Quantity
 from fibersim.core.units import ureg
@@ -34,6 +35,48 @@ class FDMode2D:
     def get_intensity_2d(self) -> np.ndarray:
         """Returns the 2D normalized intensity profile."""
         return self.psi_2d**2
+
+
+def _classify_lp_mode(
+    psi_2d: np.ndarray,
+    x_grid: np.ndarray,
+    y_grid: np.ndarray,
+    core_radius: float,
+) -> Tuple[int, int]:
+    """Estimate LP mode orders (l, m) from a 2D field profile via azimuthal FFT and radial node counting."""
+    interp = RegularGridInterpolator(
+        (x_grid, y_grid), psi_2d,
+        method="linear", bounds_error=False, fill_value=0.0,
+    )
+
+    # Azimuthal Fourier decomposition at r = 0.5 * core_radius to estimate l
+    r_az = 0.5 * core_radius
+    n_theta = 256
+    theta = np.linspace(0.0, 2.0 * math.pi, n_theta, endpoint=False)
+    pts_az = np.column_stack([r_az * np.cos(theta), r_az * np.sin(theta)])
+    az_vals = interp(pts_az)
+    fft_coeffs = np.abs(np.fft.rfft(az_vals))
+    max_l_search = min(8, len(fft_coeffs) - 1)
+    l_est = int(np.argmax(fft_coeffs[: max_l_search + 1]))
+
+    # Radial zero-crossing count along direction of peak amplitude to estimate m
+    max_abs_idx = np.unravel_index(np.argmax(np.abs(psi_2d)), psi_2d.shape)
+    x_peak = float(x_grid[max_abs_idx[0]])
+    y_peak = float(y_grid[max_abs_idx[1]])
+    angle = math.atan2(y_peak, x_peak)
+    r_rad = np.linspace(0.0, 1.1 * core_radius, 300)
+    pts_rad = np.column_stack([r_rad * np.cos(angle), r_rad * np.sin(angle)])
+    rad_vals = interp(pts_rad)
+    core_vals = rad_vals[r_rad <= core_radius]
+    noise_thresh = 0.05 * float(np.max(np.abs(core_vals))) if core_vals.size else 0.0
+    core_sig = core_vals[np.abs(core_vals) > noise_thresh]
+    if core_sig.size < 2:
+        m_est = 1
+    else:
+        zero_crossings = int(np.sum(np.diff(np.sign(core_sig)) != 0))
+        m_est = zero_crossings + 1
+
+    return l_est, m_est
 
 
 def solve_modes_2d(
@@ -156,11 +199,11 @@ def solve_modes_2d(
     guided_modes.sort(key=lambda val: val[0], reverse=True)
 
     modes_list = []
-    for m_idx, (n_eff, beta, psi_2d) in enumerate(guided_modes):
-        # We assign placeholder values for l and m since in 2D the symmetries are numeric
+    for _m_idx, (n_eff, beta, psi_2d) in enumerate(guided_modes):
+        l_approx, m_approx = _classify_lp_mode(psi_2d, x, y, fiber.core_radius)
         mode = FDMode2D(
-            l_approx=0,  # placeholder
-            m_approx=m_idx + 1,
+            l_approx=l_approx,
+            m_approx=m_approx,
             beta=beta,
             n_eff=n_eff,
             wavelength=wl,

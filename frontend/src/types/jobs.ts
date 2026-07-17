@@ -1,5 +1,5 @@
-export type JobStatus = "queued" | "running" | "completed" | "cancelled" | "error";
-export type JobKind = "ase" | "bpm";
+export type JobStatus = "queued" | "running" | "completed" | "cancelled" | "error" | "expired";
+export type JobKind = "ase" | "bpm" | "system" | "fbg" | "splicing" | "thermal" | "coupler" | "taper" | "gnlse" | "power_ramp";
 
 export interface JobInfo {
   job_id: string;

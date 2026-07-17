@@ -31,6 +31,7 @@ export function ASESpectrumPlot({ response, height = 280 }: ASESpectrumPlotProps
   return (
     <PlotlyChart
       height={height}
+      exportFilename="ase_spectrum"
       data={[
         {
           x: wls, y: outF, name: "ASE forward (z=L)",

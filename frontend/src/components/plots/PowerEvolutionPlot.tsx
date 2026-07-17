@@ -64,6 +64,7 @@ export function PowerEvolutionPlot({ response, showASE = true, height = 420 }: P
   return (
     <PlotlyChart
       height={height}
+      exportFilename="power_evolution"
       data={traces}
       layout={{
         xaxis: { title: { text: "z (m)" } },

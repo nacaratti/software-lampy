@@ -46,8 +46,6 @@ export const defaultParams: Record<DeviceType, Record<string, unknown>> = {
     background_loss_db_m: 0.005,
     peak_absorption_dB_m_976nm: 200,
     tau_ms: 0.84,
-    gamma_pump: 0.85,
-    gamma_signal: 0.82,
     N_total: 3e25,
   },
   fiber_passive: {

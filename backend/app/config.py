@@ -11,6 +11,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
     max_concurrent_jobs: int = 2
+    max_concurrent_sync_solvers: int = 4  # heavy sync endpoints (2D modes, thermal)
     job_ttl_seconds: int = 3600
     progress_min_interval_seconds: float = 0.1  # at most 10 Hz
 

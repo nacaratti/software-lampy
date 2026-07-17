@@ -15,10 +15,16 @@ export interface ThermalCalculationRequest {
   P_pump_backward_w: number;
   P_signal_seed_w: number;
   pumping: "forward" | "backward" | "bidirectional";
+  method: "analytical" | "rk4";
+  sigma_abs_pump: number;
+  sigma_em_pump: number;
+  sigma_abs_signal: number;
+  sigma_em_signal: number;
   k_core: number;
   k_clad: number;
   k_coat: number;
   h_conv: number;
+  epsilon: number;
   T_ambient_celsius: number;
   num_z_points: number;
   num_r_points: number;
@@ -30,6 +36,8 @@ export interface ThermalCalculationResponse {
   pumps_backward: number[];
   pumps_total: number[];
   signals_forward: number[];
+  signals_backward: number[];
+  pump_output_w: number[];
   n2_fraction: number[];
   r_um: number[];
   T_center_celsius: number[];
@@ -39,4 +47,5 @@ export interface ThermalCalculationResponse {
   efficiency: number;
   output_power_w: number;
   T_max_celsius: number;
+  method_used: string;
 }

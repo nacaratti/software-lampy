@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from typing import List, Union, Tuple
+from typing import List, Optional, Union, Tuple
 from fibersim.core.constants import C_LIGHT
 
 class GNLSEResults:
@@ -13,13 +13,23 @@ class GNLSEResults:
         t: np.ndarray,             # shape: (num_t,)
         frequencies: np.ndarray,   # shape: (num_t,)
         envelopes: np.ndarray,     # shape: (z_steps, num_t) complex time envelope
-        spectrums: np.ndarray      # shape: (z_steps, num_t) complex frequency spectrum
+        spectrums: np.ndarray,     # shape: (z_steps, num_t) complex frequency spectrum
+        saturated_gain_per_m: Optional[float] = None,
+        pulse_energy_in_j: Optional[float] = None,
+        pulse_energy_out_j: Optional[float] = None,
     ):
         self.z = z
         self.t = t
         self.frequencies = frequencies
         self.envelopes = envelopes
         self.spectrums = spectrums
+        # Set only when solve_gnlse was called with small_signal_gain_per_m != 0
+        # — the single energy-saturated gain value used for the whole pass
+        # (see solve_gnlse docstring for why gain is frozen per-pass) and the
+        # resulting input/output pulse energies for a quick sanity check.
+        self.saturated_gain_per_m = saturated_gain_per_m
+        self.pulse_energy_in_j = pulse_energy_in_j
+        self.pulse_energy_out_j = pulse_energy_out_j
 
     @property
     def temporal_power(self) -> np.ndarray:
@@ -45,12 +55,15 @@ def solve_gnlse(
     raman_fraction: float = 0.18,
     tau1: float = 12.2e-15,             # 12.2 fs (silica glass parameter)
     tau2: float = 32.0e-15,             # 32 fs (silica glass parameter)
-    z_steps: int = 400
+    z_steps: int = 400,
+    small_signal_gain_per_m: float = 0.0,
+    saturation_energy_j: Optional[float] = None,
+    gain_bandwidth_hz: Optional[float] = None,
 ) -> GNLSEResults:
     """
-    Solves the Generalized Non-Linear Schrödinger Equation (GNLSE) using the 
+    Solves the Generalized Non-Linear Schrödinger Equation (GNLSE) using the
     Symmetric Split-Step Fourier Method (SSFM) with frequency-domain RK4 nonlinear step.
-    
+
     Arguments:
         time_grid (np.ndarray): Uniform time array (seconds).
         initial_envelope (np.ndarray): Complex initial envelope A(T) (sqrt(W)).
@@ -65,7 +78,34 @@ def solve_gnlse(
         tau1 (float): Raman oscillation time scale (seconds).
         tau2 (float): Raman damping decay time scale (seconds).
         z_steps (int): Number of steps along the propagation coordinate z.
-        
+        small_signal_gain_per_m (float): Rate-equation small-signal power gain
+            coefficient g0 = Gamma*(sigma_em*N2 - sigma_abs*N1) (1/m), e.g.
+            from fibersim.solvers.power.ase's local gain formula. 0.0 (default)
+            disables gain — pure passive-fiber GNLSE, unchanged from before.
+        saturation_energy_j (Optional[float]): Gain saturation energy E_sat
+            (J) = h*nu*A_eff / (Gamma*(sigma_abs+sigma_em)) — the standard
+            rate-equation saturation energy. If given, the gain is reduced to
+            g0 / (1 + E_pulse_in/E_sat), a single value for the whole pass
+            (see note below). If None, gain is unsaturated (small-signal).
+        gain_bandwidth_hz (Optional[float]): FWHM-scale gain bandwidth (Hz).
+            If given, gain is spectrally shaped as a Lorentzian centered on
+            the carrier: g(omega) = g_sat / (1 + (omega/Omega_g)^2). If None,
+            gain is applied flat across the whole simulated bandwidth (only
+            reasonable for narrow-bandwidth pulses relative to the gain
+            medium's linewidth).
+
+        Gain is *frozen* for the entire single-pass propagation rather than
+        updated per z-step from a co-evolving upper-state population: the
+        upper-state lifetime of a rare-earth-doped fiber (~0.1-10 ms) is
+        many orders of magnitude longer than a typical simulated pulse
+        (fs-ns), so the population — and hence the gain — cannot respond to
+        the pulse's own sub-structure during a single transit. This
+        "frozen-gain, energy-saturated" model is the standard simplification
+        used for gain-coupled ultrafast/pulsed fiber amplifier propagation
+        (e.g. similariton/parabolic-pulse amplifier models built on Agrawal's
+        treatment of fiber amplifiers) — it is not attempting to model
+        multi-pass/CW gain dynamics, which is what solvers/power/ase.py is for.
+
     Returns:
         GNLSEResults: Holds the coordinate arrays, temporal envelopes, and spectra.
     """
@@ -88,16 +128,34 @@ def solve_gnlse(
     # Convert loss from dB/m to linear amplitude loss coefficient (alpha/2)
     # loss (dB/m) = 10 * log10(exp(alpha * z)) / z = 4.343 * alpha
     alpha = (loss_db_per_m / 10.0) * math.log(10.0)
-    
-    # Construct linear dispersion and loss operator: D(omega)
+
+    # Energy-saturated small-signal gain, frozen for the whole pass (see
+    # docstring). Pulse energy = integral of instantaneous power over time.
+    saturated_gain: Optional[float] = None
+    pulse_energy_in: Optional[float] = None
+    if small_signal_gain_per_m != 0.0:
+        pulse_energy_in = float(np.sum(np.abs(initial_envelope) ** 2) * dt)
+        if saturation_energy_j is not None and saturation_energy_j > 0.0:
+            saturated_gain = small_signal_gain_per_m / (1.0 + pulse_energy_in / saturation_energy_j)
+        else:
+            saturated_gain = small_signal_gain_per_m
+
+    # Construct linear dispersion, loss and gain operator: D(omega)
     # GNLSE in frequency domain: dA_tilde/dz = D(omega) * A_tilde
-    # where D(omega) = -alpha/2 + i * sum( beta_n / n! * omega^n )
+    # where D(omega) = -alpha/2 + g(omega)/2 + i * sum( beta_n / n! * omega^n )
     D = -alpha / 2.0 + 0j
+    if saturated_gain is not None:
+        if gain_bandwidth_hz is not None and gain_bandwidth_hz > 0.0:
+            omega_g = 2.0 * math.pi * gain_bandwidth_hz
+            gain_profile = saturated_gain / (1.0 + (omega / omega_g) ** 2)
+        else:
+            gain_profile = np.full(N, saturated_gain)
+        D = D + gain_profile / 2.0
     for idx, beta_n in enumerate(beta_list):
         n = idx + 2
         # dispersion contribution: +i * (beta_n / n!) * omega^n
         D += 1j * (beta_n / math.factorial(n)) * (omega ** n)
-        
+
     # Precompute Raman response function
     if raman:
         h_r = np.zeros(N)
@@ -172,5 +230,11 @@ def solve_gnlse(
         # Store results
         envelopes_z[idx, :] = np.fft.ifft(V)
         spectrums_z[idx, :] = (V / N)[sort_idx]
-        
-    return GNLSEResults(z, time_grid, frequencies, envelopes_z, spectrums_z)
+
+    pulse_energy_out = float(np.sum(np.abs(envelopes_z[-1, :]) ** 2) * dt) if saturated_gain is not None else None
+    return GNLSEResults(
+        z, time_grid, frequencies, envelopes_z, spectrums_z,
+        saturated_gain_per_m=saturated_gain,
+        pulse_energy_in_j=pulse_energy_in,
+        pulse_energy_out_j=pulse_energy_out,
+    )
