@@ -5,6 +5,9 @@ from backend.app.schemas.common import EncodedArray
 
 
 class ThermalCalculationRequest(BaseModel):
+    """Yb³⁺-only: the underlying cavity solver (fibersim.solvers.thermal.cavity)
+    is a port of a Yb MATLAB reference, so wavelength/lifetime bounds are Yb's."""
+
     # Fiber geometry
     fiber_length_m: float = Field(5.0, gt=0.1, lt=50.0)
     core_radius_um: float = Field(3.0, gt=0.5, lt=20.0)
@@ -12,16 +15,16 @@ class ThermalCalculationRequest(BaseModel):
     coating_radius_um: float = Field(125.0, gt=20.0, lt=1000.0)
     
     # Active ion doping
-    N_total: float = Field(4e25, gt=1e24, lt=1e27, description="Yb3+ concentration (ions/m3)")
-    tau_ms: float = Field(1.0, gt=0.1, lt=10.0, description="Upper state lifetime (ms)")
+    N_total: float = Field(4e25, gt=1e24, lt=1e27, description="Yb³⁺ concentration (ions/m³)")
+    tau_ms: float = Field(1.0, gt=0.1, lt=10.0, description="Yb³⁺ upper-state lifetime (ms)")
     
     # Wavelengths (nm)
     lambda_pump_nm: float = Field(976.0, gt=800.0, lt=1100.0)
     lambda_signal_nm: float = Field(1018.0, gt=950.0, lt=1200.0)
     
     # Overlap factors
-    gamma_pump: float = Field(0.8, gt=0.01, lt=1.0)
-    gamma_signal: float = Field(0.9, gt=0.01, lt=1.0)
+    gamma_pump: float = Field(0.02, ge=0.01, le=1.0)
+    gamma_signal: float = Field(0.9, ge=0.01, le=1.0)
     
     # Pump powers (W)
     P_pump_forward_w: float = Field(10.0, ge=0.0, le=1000.0)
@@ -34,11 +37,13 @@ class ThermalCalculationRequest(BaseModel):
     # Solver method: analytical (forward-Euler) or RK4 (scipy.solve_ivp)
     method: Literal["analytical", "rk4"] = "analytical"
 
-    # Stimulated emission/absorption cross-sections (m²)
-    sigma_abs_pump: float = Field(2.5e-25, gt=0.0, description="Pump absorption cross-section σ_abs_p (m²)")
-    sigma_em_pump: float = Field(2.7e-25, gt=0.0, description="Pump emission cross-section σ_em_p (m²)")
-    sigma_abs_signal: float = Field(0.4e-25, gt=0.0, description="Signal absorption cross-section σ_abs_s (m²)")
-    sigma_em_signal: float = Field(4.5e-25, gt=0.0, description="Signal emission cross-section σ_em_s (m²)")
+    # Stimulated emission/absorption cross-sections (m²). Defaults are the
+    # McCumber-derived Yb³⁺ model (ActiveIon.create_yb3) at 976 / 1018 nm —
+    # the same values the Thermal page fetches from /api/fibers/ion-cross-sections.
+    sigma_abs_pump: float = Field(2.368e-24, gt=0.0, description="Pump absorption cross-section σ_abs_p (m²)")
+    sigma_em_pump: float = Field(2.431e-24, gt=0.0, description="Pump emission cross-section σ_em_p (m²)")
+    sigma_abs_signal: float = Field(1.02e-25, gt=0.0, description="Signal absorption cross-section σ_abs_s (m²)")
+    sigma_em_signal: float = Field(7.864e-25, gt=0.0, description="Signal emission cross-section σ_em_s (m²)")
 
     # Thermal conductivities (W/m.K)
     k_core: float = Field(1.38, gt=0.1, lt=10.0)

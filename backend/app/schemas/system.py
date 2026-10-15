@@ -60,7 +60,8 @@ class PassiveFiberParams(_Params):
     clad_radius_um: float = Field(62.5, gt=0.0, le=2000.0)
     n_core: float = Field(1.468, ge=1.0, le=3.0)
     n_clad: float = Field(1.463, ge=1.0, le=3.0)
-    attenuation_db_km: float = Field(0.35, ge=0.0, le=10000.0)
+    # None -> use per-wavelength catalog values (attenuation_db_km_<λ>nm) or 0.35.
+    attenuation_db_km: Optional[float] = Field(None, ge=0.0, le=10000.0)
     length_m: float = Field(1.0, gt=0.0, le=100000.0)
 
 

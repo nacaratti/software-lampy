@@ -133,3 +133,74 @@ def test_index_preview_endpoint(client):
     assert body["n_core"] == pytest.approx(1.45)
     assert body["n_cladding"] == pytest.approx(1.4407)
     assert len(body["r_um"]) == len(body["n"]) == 100
+
+
+def test_ion_cross_sections_endpoint_matches_ion_model(client):
+    resp = client.post(
+        "/api/fibers/ion-cross-sections",
+        json={"ion": "yb", "wavelengths_nm": [976.0, 1064.0]},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body["sigma_abs_m2"]) == 2
+    assert len(body["sigma_em_m2"]) == 2
+
+    from fibersim.core.ions import ActiveIon
+    yb = ActiveIon.create_yb3()
+    a976, e976 = yb.get_cross_sections(976e-9)
+    assert body["sigma_abs_m2"][0] == pytest.approx(a976, rel=1e-9)
+    assert body["sigma_em_m2"][0] == pytest.approx(e976, rel=1e-9)
+
+
+def test_ion_cross_sections_endpoint_supports_er_and_tm(client):
+    resp = client.post(
+        "/api/fibers/ion-cross-sections",
+        json={"ion": "er", "wavelengths_nm": [1530.0]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["sigma_abs_m2"][0] > 0
+
+    resp = client.post(
+        "/api/fibers/ion-cross-sections",
+        json={"ion": "tm", "wavelengths_nm": [790.0]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["sigma_abs_m2"][0] > 0
+
+
+def test_catalog_absorption_carries_its_own_wavelength(client):
+    devices = client.get("/api/devices").json()
+    by_ion = {}
+    for d in devices:
+        p = d["parameters"]
+        if d["device_type"] == "fiber_active" and d["category"] == "shelf":
+            assert "peak_absorption_dB_m_976nm" not in p
+            by_ion.setdefault(p.get("ion", "yb"), set()).add(p["absorption_wavelength_nm"])
+    # Yb DC fibers specify cladding absorption at 915/920 nm, core-pumped Nufern at 976
+    assert by_ion == {"yb": {915, 920, 976}, "er": {1530, 1535}, "tm": {790}}
+
+
+def test_legacy_absorption_key_is_migrated():
+    import json
+    from sqlalchemy.orm import Session
+    from backend.app.models.device import Device
+    from backend.app.routers.devices import _seed_shelf
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    with Session(engine) as db:
+        db.add(Device(name="ER12-6", device_type="fiber_active", category="shelf",
+                      parameters=json.dumps({"ion": "er", "peak_absorption_dB_m_976nm": 12.0})))
+        db.add(Device(name="DCF-YB-20/128E", device_type="fiber_active", category="shelf",
+                      parameters=json.dumps({"peak_absorption_dB_m": 3.0, "absorption_wavelength_nm": 976})))
+        db.add(Device(name="My fiber", device_type="fiber_active", category="custom",
+                      parameters=json.dumps({"peak_absorption_dB_m_976nm": 300.0})))
+        db.commit()
+        _seed_shelf(db)
+        er = json.loads(db.query(Device).filter_by(name="ER12-6").one().parameters)
+        mine = json.loads(db.query(Device).filter_by(name="My fiber").one().parameters)
+        dcf = json.loads(db.query(Device).filter_by(name="DCF-YB-20/128E").one().parameters)
+    assert er["peak_absorption_dB_m"] == 12.0 and er["absorption_wavelength_nm"] == 1530
+    assert dcf["absorption_wavelength_nm"] == 915  # earlier mislabeled row re-synced
+    assert mine["peak_absorption_dB_m"] == 300.0 and mine["absorption_wavelength_nm"] == 976
+    assert "peak_absorption_dB_m_976nm" not in er and "peak_absorption_dB_m_976nm" not in mine

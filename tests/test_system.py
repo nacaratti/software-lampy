@@ -523,3 +523,29 @@ def test_er_fiber_reports_upconversion_coefficient():
     res = simulate_system(SystemGraph(nodes, edges))
     er = res.nodes["er"]
     assert er["er_upconversion_coeff_m3_s"] == pytest.approx(8e-24)
+
+
+# ---------------------------------------------------------------------------
+# Passive fiber attenuation (catalog per-wavelength keys)
+# ---------------------------------------------------------------------------
+
+def _passive_link(seed_nm, **fiber_params):
+    nodes = [
+        _node("seed", "seed", wavelength_nm=seed_nm, power_w=1.0),
+        _node("f", "fiber_passive", length_m=10_000.0, **fiber_params),
+        _node("out", "power_meter"),
+    ]
+    edges = [_edge("e0", "seed", "f"), _edge("e1", "f", "out")]
+    return simulate_system(SystemGraph(nodes, edges)).outputs["out"]["total_power_w"]
+
+
+def test_passive_fiber_uses_catalog_attenuation_at_signal_wavelength():
+    catalog = {"attenuation_db_km_1310nm": 0.33, "attenuation_db_km_1550nm": 0.18}
+    # 10 km at 0.18 dB/km -> 1.8 dB, at 0.33 -> 3.3 dB
+    assert _passive_link(1550.0, **catalog) == pytest.approx(10 ** (-1.8 / 10), rel=1e-6)
+    assert _passive_link(1310.0, **catalog) == pytest.approx(10 ** (-3.3 / 10), rel=1e-6)
+
+
+def test_passive_fiber_explicit_attenuation_wins():
+    p = _passive_link(1550.0, attenuation_db_km=1.0, attenuation_db_km_1550nm=0.18)
+    assert p == pytest.approx(10 ** (-10.0 / 10), rel=1e-6)
