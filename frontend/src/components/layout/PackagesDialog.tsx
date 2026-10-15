@@ -3,6 +3,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { navItems } from "@/lib/navItems";
 import { useNavPrefsStore } from "@/stores/useNavPrefsStore";
+import { MOD_KEY } from "@/lib/utils";
 
 interface PackagesDialogProps {
   open: boolean;
@@ -22,7 +23,7 @@ export function PackagesDialog({ open, onClose }: PackagesDialogProps) {
         <DialogHeader>
           <DialogTitle>Sidebar packages</DialogTitle>
           <DialogDescription>
-            Choose which pages appear in the sidebar. Hidden pages are still one ⌘K search away.
+            Choose which pages appear in the sidebar. Hidden pages are still one {MOD_KEY} K search away.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1">

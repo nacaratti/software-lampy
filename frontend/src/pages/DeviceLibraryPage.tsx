@@ -452,7 +452,7 @@ export function DeviceLibraryPage() {
   return (
     <div className="container mx-auto py-8 max-w-7xl h-full flex flex-col">
       <PageHeader
-        eyebrow="Configuration"
+        eyebrow="Platform"
         title="Device Library"
         description="Manage fibers, FBGs, couplers, and pump sources. Mix custom devices with the off-the-shelf catalogue."
         actions={

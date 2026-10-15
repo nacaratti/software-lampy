@@ -7,22 +7,19 @@ import {
   addEdge,
   useNodesState,
   useEdgesState,
-  Handle,
-  Position,
   BackgroundVariant,
   type Node,
   type Edge,
   type Connection,
-  type NodeProps,
   type ReactFlowInstance,
+  type OnBeforeDelete,
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { toast } from "sonner";
 import {
-  Activity, Minus, Layers, GitMerge, Zap,
   Trash2, Save, FolderOpen, Play, Package, X, ChevronDown, ChevronRight,
-  Loader2, RotateCcw, Copy, Pencil, BarChart3, Gauge, ScanEye, Merge, FlaskConical,
+  Loader2, RotateCcw, Copy, Pencil, FlaskConical, Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +39,13 @@ import { api } from "@/lib/api";
 import { useJobSocket } from "@/lib/ws";
 import type { Device, DeviceType } from "@/types/device";
 import { deviceTypeLabels } from "@/types/device";
+import { SystemNodeCard } from "@/components/system/SystemNodeCard";
+import { SignalEdge } from "@/components/system/SignalEdge";
+import { PaletteItem } from "@/components/system/PaletteItem";
+import {
+  INSTRUMENT_KINDS, PUMP_EDGE_COLOR, SOURCE_KINDS, kindStyle,
+  type SystemNode, type SystemNodeData,
+} from "@/components/system/nodeStyles";
 import type {
   SystemNodeKind,
   SystemOutputSummary,
@@ -54,50 +58,7 @@ import type {
 // Types
 // ---------------------------------------------------------------------------
 
-type InstrumentKind = "osa" | "power_meter" | "beam_profiler";
-
-type SystemNodeData = {
-  label: string;
-  nodeKind: DeviceType | "seed" | "power_combiner" | InstrumentKind;
-  deviceId?: string;
-  deviceName?: string;
-  params: Record<string, unknown>;
-  resultSummary?: string;
-};
-
-type SystemNode = Node<SystemNodeData>;
-
 const STORAGE_KEY = "lampy-system-v1";
-
-// ---------------------------------------------------------------------------
-// Node visual styles
-// ---------------------------------------------------------------------------
-
-const KIND_META: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string; border: string; bg: string }> = {
-  fiber_active: { icon: Activity,  color: "text-emerald-400", border: "border-emerald-500/50", bg: "bg-emerald-950/60" },
-  fiber_passive: { icon: Minus,    color: "text-sky-400",     border: "border-sky-500/50",     bg: "bg-sky-950/60" },
-  fbg:           { icon: Layers,   color: "text-violet-400",  border: "border-violet-500/50",  bg: "bg-violet-950/60" },
-  coupler_wdm:   { icon: GitMerge, color: "text-amber-400",   border: "border-amber-500/50",   bg: "bg-amber-950/60" },
-  pump_source:   { icon: Zap,      color: "text-rose-400",    border: "border-rose-500/50",    bg: "bg-rose-950/60" },
-  seed:          { icon: Zap,      color: "text-yellow-400",  border: "border-yellow-500/50",  bg: "bg-yellow-950/60" },
-  power_combiner: { icon: Merge,   color: "text-indigo-400",  border: "border-indigo-500/50",  bg: "bg-indigo-950/60" },
-  osa:           { icon: BarChart3, color: "text-cyan-400",   border: "border-cyan-500/50",    bg: "bg-cyan-950/60" },
-  power_meter:   { icon: Gauge,     color: "text-orange-400", border: "border-orange-500/50",  bg: "bg-orange-950/60" },
-  beam_profiler: { icon: ScanEye,   color: "text-pink-400",   border: "border-pink-500/50",    bg: "bg-pink-950/60" },
-};
-
-function getKindMeta(kind: string) {
-  return KIND_META[kind] ?? { icon: Package, color: "text-muted-foreground", border: "border-border", bg: "bg-card" };
-}
-
-function formatParam(v: unknown): string {
-  if (typeof v === "number") {
-    if (Math.abs(v) < 1e-3 && v !== 0) return v.toExponential(2);
-    if (Math.abs(v) > 1e4) return v.toExponential(2);
-    return String(v);
-  }
-  return String(v ?? "");
-}
 
 function formatWatts(w: number): string {
   if (!Number.isFinite(w)) return "—";
@@ -215,201 +176,80 @@ function NonlinearEffectsPanel({
   );
 }
 
-// Primary key params to show per node kind
-const SUMMARY_KEYS: Record<string, string[]> = {
-  fiber_active:  ["length_m", "core_radius_um", "peak_absorption_dB_m_976nm"],
-  fiber_passive: ["length_m", "core_radius_um", "attenuation_db_km"],
-  fbg:           ["central_wavelength_nm", "reflectivity", "bandwidth_nm"],
-  coupler_wdm:   ["wavelength_1_nm", "wavelength_2_nm", "insertion_loss_port1_db"],
-  pump_source:   ["wavelength_nm", "power_w"],
-  seed:          ["wavelength_nm", "power_w"],
-  power_combiner: ["insertion_loss_db"],
-  osa:           ["rbw_nm"],
-  power_meter:   [],
-  beam_profiler: ["grid_n", "num_z"],
-};
-
-// Kinds that only ever take one input and produce one output (used by the
-// connection-validation rules below — the engine can't yet solve splitters).
-const SOURCE_KINDS = new Set(["pump_source", "seed"]);
-// Every terminal node is a measurement tap — any number of them can hang off
-// the same node, since they only read the signal (matches the engine's
-// non_tap_out rule). There is no separate non-tap "output" sink anymore.
-const INSTRUMENT_KINDS = new Set(["osa", "power_meter", "beam_profiler"]);
 const SINK_KINDS = INSTRUMENT_KINDS;
 
-// ---------------------------------------------------------------------------
-// Custom node component
-// ---------------------------------------------------------------------------
-
-function SystemNodeComponent({ data, selected }: NodeProps<SystemNode>) {
-  const meta = getKindMeta(data.nodeKind);
-  const Icon = meta.icon;
-  const summaryKeys = SUMMARY_KEYS[data.nodeKind] ?? [];
-  const isPump = data.nodeKind === "pump_source" || data.nodeKind === "seed";
-  const isInstrument = data.nodeKind === "osa" || data.nodeKind === "power_meter" || data.nodeKind === "beam_profiler";
-  const isTerminal = isInstrument;
-  const isCoupler = data.nodeKind === "coupler_wdm";
-
-  return (
-    <div
-      className={`rounded-lg border ${meta.border} ${meta.bg} backdrop-blur-sm min-w-[140px] max-w-[180px] shadow-lg transition-all ${
-        selected ? "ring-2 ring-primary ring-offset-1 ring-offset-background" : ""
-      }`}
-    >
-      {/* Input handles */}
-      {!isPump && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          className="!w-2.5 !h-2.5 !border-2 !border-muted-foreground !bg-background"
-        />
-      )}
-      {isCoupler && (
-        <Handle
-          type="target"
-          id="pump"
-          position={Position.Top}
-          className="!w-2.5 !h-2.5 !border-2 !border-rose-400 !bg-background"
-          style={{ left: "50%" }}
-        />
-      )}
-
-      {/* Node body */}
-      <div className="px-3 py-2.5">
-        <div className="flex items-center gap-1.5 mb-1.5">
-          <Icon className={`h-3.5 w-3.5 shrink-0 ${meta.color}`} />
-          <span className="text-[11px] font-semibold leading-tight line-clamp-2 text-foreground">
-            {data.label}
-          </span>
-        </div>
-        {summaryKeys.length > 0 && (
-          <div className="space-y-0.5">
-            {summaryKeys
-              .filter((k) => data.params[k] !== undefined)
-              .map((k) => (
-                <div key={k} className="flex justify-between gap-2 text-[10px]">
-                  <span className="text-muted-foreground truncate">{k.replace(/_/g, " ")}</span>
-                  <span className="font-mono text-foreground shrink-0">{formatParam(data.params[k])}</span>
-                </div>
-              ))}
-          </div>
-        )}
-        {isInstrument && (
-          <div className="text-[10px] text-muted-foreground">
-            {data.nodeKind === "osa" && "Spectrum analyzer"}
-            {data.nodeKind === "power_meter" && "Power meter"}
-            {data.nodeKind === "beam_profiler" && "Beam profiler (CCD)"}
-          </div>
-        )}
-        {data.resultSummary && (
-          <div className="mt-1.5 pt-1.5 border-t border-border/60 text-[10px] font-mono text-primary">
-            {data.resultSummary}
-          </div>
-        )}
-      </div>
-
-      {/* Output handles */}
-      {!isTerminal && (
-        <Handle
-          type="source"
-          position={Position.Right}
-          className="!w-2.5 !h-2.5 !border-2 !border-muted-foreground !bg-background"
-        />
-      )}
-    </div>
-  );
-}
-
 const nodeTypes = {
-  fiber_active: SystemNodeComponent,
-  fiber_passive: SystemNodeComponent,
-  fbg: SystemNodeComponent,
-  coupler_wdm: SystemNodeComponent,
-  pump_source: SystemNodeComponent,
-  seed: SystemNodeComponent,
-  power_combiner: SystemNodeComponent,
-  osa: SystemNodeComponent,
-  power_meter: SystemNodeComponent,
-  beam_profiler: SystemNodeComponent,
+  fiber_active: SystemNodeCard,
+  fiber_passive: SystemNodeCard,
+  fbg: SystemNodeCard,
+  coupler_wdm: SystemNodeCard,
+  pump_source: SystemNodeCard,
+  seed: SystemNodeCard,
+  power_combiner: SystemNodeCard,
+  osa: SystemNodeCard,
+  power_meter: SystemNodeCard,
+  beam_profiler: SystemNodeCard,
 };
+
+// Overriding the built-in "default" type means every edge — including ones
+// in systems saved before this existed — gets the removable SignalEdge.
+const edgeTypes = { default: SignalEdge };
 
 // ---------------------------------------------------------------------------
 // Palette
 // ---------------------------------------------------------------------------
 
-const GENERIC_BLOCKS: Array<{ kind: string; label: string; params: Record<string, unknown> }> = [
-  { kind: "pump_source",    label: "976 nm Pump",         params: { wavelength_nm: 976, power_w: 0.5 } },
-  { kind: "seed",           label: "1064 nm Seed Signal", params: { wavelength_nm: 1064, power_w: 1e-3 } },
-  { kind: "power_combiner", label: "Power Combiner (N×1)", params: { insertion_loss_db: 0.5 } },
+type PaletteBlock = { kind: string; label: string; sublabel: string; params: Record<string, unknown> };
+
+const GENERIC_BLOCKS: PaletteBlock[] = [
+  { kind: "seed",           label: "Seed laser",        sublabel: "1064 nm · 1 mW",  params: { wavelength_nm: 1064, power_w: 1e-3 } },
+  { kind: "pump_source",    label: "Pump diode",        sublabel: "976 nm · 0.5 W",  params: { wavelength_nm: 976, power_w: 0.5 } },
+  { kind: "coupler_wdm",    label: "WDM / pump combiner", sublabel: "signal + pump port", params: { insertion_loss_port1_db: 0.3, insertion_loss_port2_db: 0.4 } },
+  { kind: "power_combiner", label: "Power combiner",    sublabel: "N×1 · 0.5 dB",    params: { insertion_loss_db: 0.5 } },
 ];
 
-const INSTRUMENT_BLOCKS: Array<{ kind: string; label: string; params: Record<string, unknown> }> = [
-  { kind: "osa",           label: "OSA (Spectrum)",   params: { rbw_nm: 0.1 } },
-  { kind: "power_meter",   label: "Power Meter",      params: {} },
-  { kind: "beam_profiler", label: "Beam Profiler (CCD)", params: { grid_n: 128, num_z: 21 } },
+const INSTRUMENT_BLOCKS: PaletteBlock[] = [
+  { kind: "osa",           label: "Spectrum analyzer", sublabel: "OSA · 0.1 nm RBW", params: { rbw_nm: 0.1 } },
+  { kind: "power_meter",   label: "Power meter",       sublabel: "total + per band",  params: {} },
+  { kind: "beam_profiler", label: "Beam profiler",     sublabel: "CCD · M² (ISO 11146)", params: { grid_n: 128, num_z: 21 } },
 ];
 
-function PaletteItem({
-  label,
-  kind,
-  onDragStart,
-}: {
-  label: string;
-  kind: string;
-  onDragStart: (e: React.DragEvent, kind: string, label: string, deviceId?: string, params?: Record<string, unknown>) => void;
-  deviceId?: string;
-  params?: Record<string, unknown>;
-}) {
-  const meta = getKindMeta(kind);
-  const Icon = meta.icon;
-  return (
-    <div
-      className={`flex items-center gap-2 rounded-md px-2.5 py-2 cursor-grab active:cursor-grabbing border ${meta.border} ${meta.bg} hover:opacity-90 transition-opacity select-none`}
-      draggable
-      onDragStart={(e) => onDragStart(e, kind, label)}
-    >
-      <Icon className={`h-3.5 w-3.5 shrink-0 ${meta.color}`} />
-      <span className="text-xs truncate">{label}</span>
-    </div>
-  );
-}
+type DragStart = (e: React.DragEvent, kind: string, label: string, deviceId?: string, params?: Record<string, unknown>) => void;
 
 function DevicePaletteSection({
   title,
   devices,
   onDragStart,
+  forceOpen,
 }: {
   title: string;
   devices: Device[];
-  onDragStart: (e: React.DragEvent, kind: string, label: string, deviceId?: string, params?: Record<string, unknown>) => void;
+  onDragStart: DragStart;
+  forceOpen: boolean;
 }) {
   const [open, setOpen] = useState(true);
   if (devices.length === 0) return null;
+  const expanded = open || forceOpen;
   return (
     <div>
       <button
         className="flex items-center gap-1.5 w-full text-[10px] uppercase tracking-wider text-muted-foreground font-medium py-1 hover:text-foreground transition-colors"
         onClick={() => setOpen((o) => !o)}
       >
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         {title}
+        <span className="ml-auto font-mono normal-case tracking-normal">{devices.length}</span>
       </button>
-      {open && (
+      {expanded && (
         <div className="space-y-1 mt-1 mb-3">
           {devices.map((d) => (
-            <div
+            <PaletteItem
               key={d.id}
-              className={`flex items-center gap-2 rounded-md px-2.5 py-2 cursor-grab active:cursor-grabbing border ${getKindMeta(d.device_type).border} ${getKindMeta(d.device_type).bg} hover:opacity-90 transition-opacity select-none`}
-              draggable
+              kind={d.device_type}
+              label={d.name}
+              sublabel={d.manufacturer || undefined}
               onDragStart={(e) => onDragStart(e, d.device_type, d.name, d.id, d.parameters)}
-            >
-              {(() => { const Icon = getKindMeta(d.device_type).icon; return <Icon className={`h-3.5 w-3.5 shrink-0 ${getKindMeta(d.device_type).color}`} />; })()}
-              <div className="min-w-0">
-                <div className="text-xs truncate">{d.name}</div>
-                {d.manufacturer && <div className="text-[10px] text-muted-foreground truncate">{d.manufacturer}</div>}
-              </div>
-            </div>
+            />
           ))}
         </div>
       )}
@@ -450,17 +290,21 @@ function NodeDetailPanel({
     toast.success("Node updated");
   }
 
-  const meta = getKindMeta(node.data.nodeKind);
-  const Icon = meta.icon;
+  const style = kindStyle(node.data.nodeKind);
+  const Icon = style.icon;
 
   return (
-    <div className="w-80 shrink-0 border-l border-border bg-card/50 flex flex-col h-full z-20 relative">
+    <div className="w-80 shrink-0 border-l border-border bg-card flex flex-col h-full z-20 relative">
+      <div className={`h-[3px] w-full ${style.bar}`} />
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <Icon className={`h-4 w-4 ${meta.color}`} />
-          <span className="text-sm font-medium">
-            {deviceTypeLabels[node.data.nodeKind as DeviceType] ?? node.data.nodeKind}
-          </span>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${style.chip}`}>
+            <Icon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-medium truncate">{node.data.label}</div>
+            <div className="text-[11px] text-muted-foreground">{style.label}</div>
+          </div>
         </div>
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose} aria-label="Close node details">
           <X className="h-3.5 w-3.5" />
@@ -508,11 +352,7 @@ function NodeDetailPanel({
             size="sm"
             variant="destructive"
             className="w-full"
-            onClick={() => {
-              if (!window.confirm(`Remove "${node.data.label}" and its connections?`)) return;
-              onDelete(node.id);
-              onClose();
-            }}
+            onClick={() => onDelete(node.id)}
           >
             <Trash2 className="h-3.5 w-3.5 mr-1.5" />Remove node
           </Button>
@@ -598,11 +438,10 @@ function ResultsPanel({
                   </TabsTrigger>
                 )}
                 {outputEntries.map(([nodeId, out]) => {
-                  const meta = getKindMeta(out.kind);
-                  const Icon = meta.icon;
+                  const Icon = kindStyle(out.kind).icon;
                   return (
                     <TabsTrigger key={nodeId} value={nodeId} className="gap-1.5">
-                      <Icon className={`h-3 w-3 ${meta.color}`} />
+                      <Icon className="h-3 w-3 text-cyan-600 dark:text-cyan-400" />
                       {nodesById.get(nodeId)?.data.label ?? nodeId}
                     </TabsTrigger>
                   );
@@ -824,15 +663,31 @@ function makeNode(
   };
 }
 
-const DEFAULT_EDGE_OPTS = {
-  animated: true,
-  style: { stroke: "hsl(var(--primary))", strokeWidth: 1.5 },
-  markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(var(--primary))" },
-};
+function edgeOptsFor(connection: Connection) {
+  const color = connection.targetHandle === "pump" ? PUMP_EDGE_COLOR : "hsl(var(--primary))";
+  return { animated: true, markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 } };
+}
+
+/** Canvas draft from the last session, read synchronously so the very first
+ * render already has it — an async load raced the autosave, which is why
+ * autosave used to skip empty canvases (and deleting the last node never
+ * stuck: it came back on reload). */
+function loadDraft(): { nodes: SystemNode[]; edges: Edge[] } {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const { nodes, edges } = JSON.parse(saved);
+      return { nodes: nodes ?? [], edges: edges ?? [] };
+    }
+  } catch { /* corrupt or unavailable storage — start empty */ }
+  return { nodes: [], edges: [] };
+}
 
 export function SystemBuilderPage() {
-  const [nodes, setNodes, onNodesChange] = useNodesState<SystemNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [draft] = useState(loadDraft);
+  const [nodes, setNodes, onNodesChange] = useNodesState<SystemNode>(draft.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(draft.edges);
+  const [paletteQuery, setPaletteQuery] = useState("");
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance<SystemNode, Edge> | null>(null);
   const [selectedNode, setSelectedNode] = useState<SystemNode | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -853,22 +708,11 @@ export function SystemBuilderPage() {
     api.listDevices().then(setDevices).catch(() => {});
   }, []);
 
-  // Load saved draft
+  // Autosave draft on change — including an emptied canvas.
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const { nodes: n, edges: e } = JSON.parse(saved);
-        setNodes(n ?? []);
-        setEdges(e ?? []);
-      } catch { /* ignore */ }
-    }
-  }, [setNodes, setEdges]);
-
-  // Autosave draft on change
-  useEffect(() => {
-    if (nodes.length === 0 && edges.length === 0) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes, edges }));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes, edges }));
+    } catch { /* storage full/blocked — the draft just isn't persisted */ }
   }, [nodes, edges]);
 
   // ---- Simulation job lifecycle ----
@@ -901,7 +745,7 @@ export function SystemBuilderPage() {
   }, [simSocket.status, simSocket.result, simJobId]);
 
   const onConnect = useCallback(
-    (connection: Connection) => setEdges((eds) => addEdge({ ...connection, ...DEFAULT_EDGE_OPTS }, eds)),
+    (connection: Connection) => setEdges((eds) => addEdge({ ...connection, ...edgeOptsFor(connection) }, eds)),
     [setEdges],
   );
 
@@ -1011,12 +855,57 @@ export function SystemBuilderPage() {
     [setNodes],
   );
 
-  const handleDeleteNode = useCallback(
-    (id: string) => {
-      setNodes((nds) => nds.filter((n) => n.id !== id));
-      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+  // Every removal — Delete/Backspace, the panel's "Remove node" button, an
+  // edge's × button — goes through React Flow's delete pipeline, so they all
+  // share one path: snapshot the canvas first, then offer Undo.
+  const snapshotRef = useRef<{ nodes: SystemNode[]; edges: Edge[] } | null>(null);
+  const latest = useRef({ nodes, edges });
+  latest.current = { nodes, edges };
+
+  const onBeforeDelete: OnBeforeDelete<SystemNode, Edge> = useCallback(async () => {
+    snapshotRef.current = latest.current;
+    return true;
+  }, []);
+
+  const onDelete = useCallback(
+    ({ nodes: removedNodes, edges: removedEdges }: { nodes: SystemNode[]; edges: Edge[] }) => {
+      const removedIds = new Set(removedNodes.map((n) => n.id));
+      setSelectedNode((prev) => (prev && removedIds.has(prev.id) ? null : prev));
+      const snapshot = snapshotRef.current;
+      const what =
+        removedNodes.length === 1
+          ? `Removed "${removedNodes[0].data.label}"`
+          : removedNodes.length > 1
+            ? `Removed ${removedNodes.length} components`
+            : removedEdges.length === 1
+              ? "Removed connection"
+              : `Removed ${removedEdges.length} connections`;
+      toast(what, {
+        action: snapshot
+          ? {
+              label: "Undo",
+              onClick: () => {
+                setNodes(snapshot.nodes);
+                setEdges(snapshot.edges);
+              },
+            }
+          : undefined,
+      });
     },
     [setNodes, setEdges],
+  );
+
+  const handleDeleteNode = useCallback(
+    (id: string) => {
+      if (rfInstance) {
+        void rfInstance.deleteElements({ nodes: [{ id }] });
+        return;
+      }
+      setNodes((nds) => nds.filter((n) => n.id !== id));
+      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+      setSelectedNode(null);
+    },
+    [rfInstance, setNodes, setEdges],
   );
 
   // ---- Toolbar actions ----
@@ -1114,11 +1003,14 @@ export function SystemBuilderPage() {
     const groups: Record<string, Device[]> = {
       fiber_active: [], fiber_passive: [], fbg: [], coupler_wdm: [], pump_source: [],
     };
+    const q = paletteQuery.trim().toLowerCase();
     for (const d of devices) {
-      if (d.device_type in groups) groups[d.device_type].push(d);
+      if (!(d.device_type in groups)) continue;
+      if (q && !`${d.name} ${d.manufacturer ?? ""} ${d.part_number ?? ""}`.toLowerCase().includes(q)) continue;
+      groups[d.device_type].push(d);
     }
     return groups;
-  }, [devices]);
+  }, [devices, paletteQuery]);
 
   const nodesById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
 
@@ -1151,45 +1043,67 @@ export function SystemBuilderPage() {
         }
       />
 
-      <div className="relative flex flex-1 min-h-0 rounded-xl overflow-hidden border border-border">
+      <div className="relative flex h-[calc(100vh-15rem)] min-h-[560px] rounded-xl overflow-hidden border border-border bg-card/30">
         {/* ---- Palette ---- */}
-        <div className="w-52 shrink-0 border-r border-border bg-card/50 flex flex-col">
-          <div className="px-3 py-2.5 border-b border-border">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-              Components
-            </p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Drag to canvas</p>
+        <div className="w-60 shrink-0 border-r border-border bg-card/60 flex flex-col">
+          <div className="px-3 pt-3 pb-2 border-b border-border space-y-2">
+            <div className="flex items-baseline justify-between">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Components</p>
+              <p className="text-[10px] text-muted-foreground">drag to canvas</p>
+            </div>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={paletteQuery}
+                onChange={(e) => setPaletteQuery(e.target.value)}
+                placeholder="Search catalogue…"
+                className="h-8 pl-7 text-xs"
+              />
+            </div>
           </div>
-          <ScrollArea className="flex-1 p-3">
-            <div className="mb-3">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Generic</p>
-              <div className="space-y-1">
-                {GENERIC_BLOCKS.map((b) => (
-                  <PaletteItem key={b.kind} label={b.label} kind={b.kind} onDragStart={onDragStart} />
-                ))}
-              </div>
-            </div>
-            <div className="mb-3">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Instruments</p>
-              <div className="space-y-1">
-                {INSTRUMENT_BLOCKS.map((b) => (
-                  <PaletteItem key={b.kind} label={b.label} kind={b.kind} onDragStart={onDragStart} />
-                ))}
-              </div>
-            </div>
-            <Separator className="mb-3" />
+          {/* Radix's viewport wraps content in a display:table div, which lets long
+              catalogue names push items past the panel edge and breaks truncate. */}
+          <ScrollArea className="flex-1 p-3 [&_[data-radix-scroll-area-viewport]>div]:!block">
+            {!paletteQuery && (
+              <>
+                <div className="mb-3">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Sources &amp; optics</p>
+                  <div className="space-y-1">
+                    {GENERIC_BLOCKS.map((b) => (
+                      <PaletteItem key={b.kind} kind={b.kind} label={b.label} sublabel={b.sublabel}
+                        onDragStart={(e) => onDragStart(e, b.kind, b.label, undefined, b.params)} />
+                    ))}
+                  </div>
+                </div>
+                <div className="mb-3">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1.5">Instruments</p>
+                  <div className="space-y-1">
+                    {INSTRUMENT_BLOCKS.map((b) => (
+                      <PaletteItem key={b.kind} kind={b.kind} label={b.label} sublabel={b.sublabel}
+                        onDragStart={(e) => onDragStart(e, b.kind, b.label, undefined, b.params)} />
+                    ))}
+                  </div>
+                </div>
+                <Separator className="mb-3" />
+              </>
+            )}
             {Object.entries(paletteGroups).map(([type, devs]) => (
               <DevicePaletteSection
                 key={type}
                 title={deviceTypeLabels[type as DeviceType]}
                 devices={devs}
                 onDragStart={onDragStart}
+                forceOpen={!!paletteQuery}
               />
             ))}
+            {paletteQuery && Object.values(paletteGroups).every((g) => g.length === 0) && (
+              <p className="text-xs text-muted-foreground text-center py-6">No catalogue part matches “{paletteQuery}”.</p>
+            )}
           </ScrollArea>
           <div className="p-3 border-t border-border">
             <p className="text-[10px] text-muted-foreground leading-relaxed">
-              Tip: connect ports by dragging from one handle to another. Click a node to edit.
+              Drag from a port to another to connect. Click a block to edit it; click a connection to remove it.
+              <kbd className="ml-1 rounded bg-secondary px-1 font-mono">Del</kbd> removes the selection.
             </p>
           </div>
         </div>
@@ -1201,6 +1115,8 @@ export function SystemBuilderPage() {
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onBeforeDelete={onBeforeDelete}
+            onDelete={onDelete}
             onConnect={onConnect}
             isValidConnection={isValidConnection}
             onInit={setRfInstance}
@@ -1209,29 +1125,29 @@ export function SystemBuilderPage() {
             onDrop={onDrop}
             onDragOver={onDragOver}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             fitView
-            deleteKeyCode="Delete"
+            fitViewOptions={{ padding: 0.25, maxZoom: 1.1 }}
+            deleteKeyCode={["Delete", "Backspace"]}
             className="bg-background"
           >
             <Background variant={BackgroundVariant.Dots} gap={20} size={1} className="opacity-30" />
-            <Controls className="!border-border !bg-card !rounded-lg !shadow-md" />
+            <Controls showInteractive={false} />
             <MiniMap
-              className="!border-border !bg-card/80 !rounded-lg"
-              nodeColor={(n) => {
-                const kind = (n.data as SystemNodeData).nodeKind;
-                const colors: Record<string, string> = {
-                  fiber_active: "#34d399", fiber_passive: "#38bdf8",
-                  fbg: "#a78bfa", coupler_wdm: "#fbbf24",
-                  pump_source: "#f87171", output: "#2dd4bf", seed: "#fde047",
-                };
-                return colors[kind] ?? "#6b7280";
-              }}
+              bgColor="hsl(var(--card))"
+              maskColor="hsl(var(--background) / 0.65)"
+              maskStrokeColor="hsl(var(--primary))"
+              maskStrokeWidth={2}
+              nodeColor={(n) => kindStyle((n.data as SystemNodeData).nodeKind).hex}
+              nodeBorderRadius={6}
+              pannable
+              zoomable
             />
             {nodes.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <Package className="h-10 w-10 text-muted-foreground/30 mb-3" />
                 <p className="text-sm text-muted-foreground/50">Drag components from the palette to get started</p>
-                <p className="text-xs text-muted-foreground/30 mt-1">Press Delete to remove selected nodes</p>
+                <p className="text-xs text-muted-foreground/40 mt-1">Click a block or connection, then Delete to remove it</p>
               </div>
             )}
           </ReactFlow>

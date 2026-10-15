@@ -91,8 +91,8 @@ export function CouplerPage() {
   return (
     <div className="container mx-auto py-8 max-w-7xl">
       <PageHeader
-        eyebrow="Directional Coupler Solver"
-        title="Fiber Directional Coupler"
+        eyebrow="Solver"
+        title="Fiber Coupler"
         description="Coupled-mode theory (CMT) solver for evanescent wave coupling between two single-mode fibers. Computes longitudinal power exchange and wavelength-dependent splitting ratio."
         actions={
           <Button variant="glow" size="sm" onClick={runSimulation} disabled={loading}>

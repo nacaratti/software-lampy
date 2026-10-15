@@ -48,7 +48,9 @@ export function ASESpectrumPlot({ response, height = 280 }: ASESpectrumPlotProps
         barmode: "group",
         xaxis: { title: { text: "Wavelength (nm)" } },
         yaxis: { title: { text: "Output power (W)" } },
-        legend: { orientation: "h", y: -0.25 },
+        // Legend above the plot: below it, it collided with the x-axis title at this height.
+        legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom" },
+        margin: { t: 40, r: 16, b: 48, l: 60 },
       }}
     />
   );

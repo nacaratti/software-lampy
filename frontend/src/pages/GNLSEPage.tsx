@@ -20,6 +20,7 @@ import { savePreset } from "@/lib/presets";
 import { PresetsDialog } from "@/components/common/PresetsDialog";
 import type { GNLSERequest, GNLSEResponse } from "@/types/gnlse";
 
+import { MOD_KEY } from "@/lib/utils";
 const defaultRequest: GNLSERequest = {
   pulse_shape: "sech2",
   wavelength_nm: 1550.0,
@@ -110,7 +111,7 @@ export function GNLSEPage() {
     <div className="container mx-auto py-8 max-w-7xl">
       <PageHeader
         eyebrow="Solver"
-        title="Ultrafast Pulse Propagation (GNLSE)"
+        title="Ultrafast Pulse (GNLSE)"
         description="Generalized Nonlinear Schrödinger Equation solver — split-step Fourier with Raman scattering, self-steepening, and higher-order dispersion. Optionally couple a saturable rate-equation gain to model a single pass through a pulsed fiber amplifier."
         actions={
           <>
@@ -132,7 +133,7 @@ export function GNLSEPage() {
                 <Play className="h-3.5 w-3.5" />
               )}
               {sock.status === "running" ? "Propagating..." : "Propagate"}
-              <kbd className="ml-1.5 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-mono">⌘↵</kbd>
+              <kbd className="ml-1.5 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-mono">{MOD_KEY}↵</kbd>
             </Button>
           </>
         }
@@ -229,7 +230,7 @@ export function GNLSEPage() {
             <Card className="border-dashed">
               <CardContent className="pt-6 text-center text-sm text-muted-foreground">
                 Set the pulse and fiber parameters and press{" "}
-                <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">⌘ Enter</kbd>.
+                <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">{MOD_KEY} Enter</kbd>.
               </CardContent>
             </Card>
           )}

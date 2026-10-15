@@ -54,7 +54,8 @@ export const PARAM_FIELD_SPECS: Record<string, FieldSpec[]> = {
     { key: "n_clad", label: "Cladding index", type: "number", min: 1, max: 3, step: 0.0001, default: 1.454 },
     { key: "cutoff_wavelength_nm", label: "Cutoff wavelength", type: "number", unit: "nm", min: 100, max: 5000, step: 1, default: 900 },
     { key: "background_loss_db_m", label: "Background loss", type: "number", unit: "dB/m", min: 0, max: 10, step: 0.001, default: 0.005 },
-    { key: "peak_absorption_dB_m_976nm", label: "Peak absorption @976nm", type: "number", unit: "dB/m", min: 0, max: 5000, step: 0.1, default: 200 },
+    { key: "peak_absorption_dB_m", label: "Peak absorption", type: "number", unit: "dB/m", min: 0, max: 5000, step: 0.1, default: 200 },
+    { key: "absorption_wavelength_nm", label: "Absorption spec. wavelength", type: "number", unit: "nm", min: 400, max: 2500, step: 1, default: 976 },
     { key: "tau_ms", label: "Upper-state lifetime", type: "number", unit: "ms", min: 0.001, max: 100, step: 0.01, default: 0.84 },
     // Pump/signal overlap Γ is now computed automatically from the guided-mode
     // and dopant-profile overlap (see fibersim.system.overlap) — no manual
