@@ -78,3 +78,8 @@ desktop.ini
 
 # ── Misc project ─────────────────────────────────────────────────────────────
 verification/
+
+# ── TypeScript build artifacts (tsc -b now writes these under node_modules/.tmp) ─
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts

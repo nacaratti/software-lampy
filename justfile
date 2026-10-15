@@ -29,13 +29,15 @@ install: install-backend install-web
 test:
     pytest -q
 
-# Run the existing phase verification scripts (sanity check that
-# adding progress_callback didn't regress any solver output)
+# Run the local phase verification scripts (sanity check that solver output
+# hasn't regressed). Note: verification/ is gitignored, so these only exist
+# on machines that have the original scripts.
 verify:
-    python verify_phase1_2.py
-    python verify_phase2_3.py
-    python verify_phase4.py
-    python verify_phase5.py
+    python verification/verify_fibersim.py
+    python verification/verify_phase1_2.py
+    python verification/verify_phase2_3.py
+    python verification/verify_phase4.py
+    python verification/verify_phase5.py
 
 # Lint/format
 fmt:
