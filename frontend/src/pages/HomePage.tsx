@@ -38,7 +38,7 @@ const solverCards = [
   },
   {
     to: "/bpm",
-    title: "Beam Propagation",
+    title: "Beam Propagation (BPM)",
     icon: Waves,
     description: "Paraxial split-step Fourier BPM in 3D. Tilt and misalign the launch, watch coupling efficiency, beat patterns, and leakage along the axis.",
     color: "from-fuchsia-500/40 via-fuchsia-500/10 to-transparent",
@@ -56,7 +56,7 @@ const solverCards = [
     to: "/thermal",
     title: "Thermal Simulator",
     icon: Thermometer,
-    description: "3-layer heat conduction (core / cladding / coating) coupled to the longitudinal power and gain profile.",
+    description: "Yb³⁺ laser cavity with 3-layer heat conduction (core / cladding / coating) coupled to the longitudinal power and gain profile.",
     color: "from-orange-500/30 via-orange-500/10 to-transparent",
     accent: "text-orange-300",
   },
@@ -200,7 +200,7 @@ export function HomePage() {
       {/* Hero */}
       <section className="text-center mb-16">
         <Badge variant="accent" className="mb-4 px-2.5 py-1">
-          Lampy · Fiber Laser Simulator
+          Lampy · Fiber Laser Studio
         </Badge>
         <h1 className="text-5xl font-semibold tracking-tight mb-5">
           Design fiber laser systems.{" "}
@@ -228,7 +228,7 @@ export function HomePage() {
           <div className="text-[11px] uppercase tracking-widest text-accent font-medium">Platform</div>
           <div className="flex-1 h-px bg-border" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {platformCards.map((card) => (
             <PlatformCard key={card.to} card={card} />
           ))}

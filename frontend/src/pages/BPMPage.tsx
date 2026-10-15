@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import type { FiberConfig } from "@/types/fiber";
 
+import { MOD_KEY } from "@/lib/utils";
 interface BpmPreset {
   fiber: FiberConfig;
   wavelength_nm: number;
@@ -125,7 +126,7 @@ export function BPMPage() {
     <div className="container mx-auto py-8 max-w-7xl">
       <PageHeader
         eyebrow="Solver"
-        title="Beam propagation (BPM)"
+        title="Beam Propagation (BPM)"
         description="Paraxial split-step Fourier propagator. Watch a launched field evolve along the fiber — perfect for studying tapers, bends, mismatched launches, and double-clad geometries."
         actions={
           <>
@@ -147,7 +148,7 @@ export function BPMPage() {
                 <Play className="h-3.5 w-3.5" />
               )}
               {sock.status === "running" ? "Propagating..." : "Propagate"}
-              <kbd className="ml-1.5 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-mono">⌘↵</kbd>
+              <kbd className="ml-1.5 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-mono">{MOD_KEY}↵</kbd>
             </Button>
           </>
         }
@@ -239,7 +240,7 @@ export function BPMPage() {
             <Card className="border-dashed">
               <CardContent className="pt-6 text-center text-sm text-muted-foreground">
                 Set the launched field and press{" "}
-                <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">⌘ Enter</kbd>.
+                <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">{MOD_KEY} Enter</kbd>.
               </CardContent>
             </Card>
           )}

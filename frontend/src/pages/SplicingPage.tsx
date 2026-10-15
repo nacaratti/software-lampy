@@ -123,8 +123,8 @@ export function SplicingPage() {
   return (
     <div className="container mx-auto py-8 max-w-6xl">
       <PageHeader
-        eyebrow="Splicing Loss Module"
-        title="Fiber Splicing & Overlap Solver"
+        eyebrow="Solver"
+        title="Splicing Loss"
         description="Compute mode-coupling overlap integrals and coupling efficiency between step-index optical fibers. Analyze sensitivity to transverse misalignment and angular tilts."
         actions={
           <Button variant="glow" size="sm" onClick={runSimulation} disabled={loading}>

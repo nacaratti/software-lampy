@@ -165,10 +165,27 @@ class ActiveIon:
                           0.30, 0.28, 0.22, 0.12, 0.05, 0.02, 0.008, 0.002,
                           0.0005, 0.0001]
 
-        wls_nm = np.linspace(1450.0, 1650.0, 41)
-        wls_m = wls_nm * 1e-9
-        sig_abs = _interp_table_nm(wls_nm, anchor_nm, anchor_abs_e24, zero_outside=False) * 1e-24
-        sig_em = _mccumber_emission_cross_section(wls_m, sig_abs, lambda_zero_line)
+        wls_nm_c = np.linspace(1450.0, 1650.0, 41)
+        sig_abs_c = _interp_table_nm(wls_nm_c, anchor_nm, anchor_abs_e24, zero_outside=False) * 1e-24
+        sig_em_c = _mccumber_emission_cross_section(wls_nm_c * 1e-9, sig_abs_c, lambda_zero_line)
+
+        # ⁴I15/2 -> ⁴I11/2 pump band (~980 nm), modeled the standard way for
+        # an effective two-level EDFA model (Giles & Desurvire 1991): an
+        # absorption-only band, since ⁴I11/2 decays non-radiatively to ⁴I13/2
+        # in ~µs, so stimulated emission at the pump is negligible. Peak
+        # ~2.5e-25 m^2 near 979 nm for alumino-germanosilicate hosts.
+        pump_anchor_nm = [940, 955, 965, 972, 976, 979, 982, 986, 992, 1000, 1010]
+        pump_anchor_abs_e24 = [0.0, 0.03, 0.08, 0.16, 0.22, 0.25, 0.22, 0.14, 0.06, 0.015, 0.0]
+        wls_nm_p = np.linspace(940.0, 1010.0, 36)
+        sig_abs_p = _interp_table_nm(wls_nm_p, pump_anchor_nm, pump_anchor_abs_e24) * 1e-24
+        sig_em_p = np.zeros_like(sig_abs_p)
+
+        # Explicit zeros in the gap so the linear interpolator doesn't
+        # bridge the two bands with a spurious ramp across 1010-1450 nm.
+        gap_nm = np.array([1020.0, 1440.0])
+        wls_m = np.concatenate([wls_nm_p, gap_nm, wls_nm_c]) * 1e-9
+        sig_abs = np.concatenate([sig_abs_p, np.zeros(2), sig_abs_c])
+        sig_em = np.concatenate([sig_em_p, np.zeros(2), sig_em_c])
 
         return cls("Er3+", lifetime=10.0e-3, wavelengths=wls_m, sigma_abs=sig_abs, sigma_em=sig_em,
                     upconversion_coeff_m3_s=8e-24)

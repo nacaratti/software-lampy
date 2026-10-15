@@ -35,9 +35,18 @@ if not exist "venv\lampy_installed.marker" (
 )
 
 REM --- 3. Frontend build ------------------------------------------------
-if not exist "frontend\dist\index.html" (
-    echo [3/4] Building frontend (first run only)...
-    if not exist "frontend\node_modules" (
+REM Rebuild whenever frontend sources are newer than the last build, so the
+REM UI served on :8000 never lags behind the code (dist/ used to be built once
+REM and then reused forever).
+set "NEED_BUILD=0"
+if not exist "frontend\dist\index.html" set "NEED_BUILD=1"
+if "!NEED_BUILD!"=="0" (
+    for /f %%R in ('powershell -NoProfile -Command "$b=(Get-Item 'frontend\dist\index.html').LastWriteTime; $s=Get-ChildItem 'frontend\src','frontend\index.html','frontend\package.json','frontend\vite.config.ts' -Recurse -File | Where-Object { $_.LastWriteTime -gt $b } | Select-Object -First 1; if ($s) { 1 } else { 0 }"') do set "NEED_BUILD=%%R"
+)
+if "!NEED_BUILD!"=="1" (
+    echo [3/4] Building frontend...
+    if not exist "frontend
+ode_modules" (
         call npm install --prefix frontend
         if errorlevel 1 (
             echo Failed to install frontend dependencies. Is Node.js installed?
@@ -52,7 +61,7 @@ if not exist "frontend\dist\index.html" (
         exit /b 1
     )
 ) else (
-    echo [3/4] Frontend build found.
+    echo [3/4] Frontend build is up to date.
 )
 
 REM --- 4. Launch ---------------------------------------------------------

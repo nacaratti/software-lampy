@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 
+import { MOD_KEY } from "@/lib/utils";
 interface TopBarProps {
   onOpenCommand: () => void;
   onOpenMobileNav: () => void;
@@ -31,7 +32,7 @@ export function TopBar({ onOpenCommand, onOpenMobileNav, onOpenPackages }: TopBa
         <div className="leading-tight">
           <div className="font-semibold tracking-tight">Lampy</div>
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-            Optical Fiber Studio
+            Fiber Laser Studio
           </div>
         </div>
       </div>
@@ -47,7 +48,7 @@ export function TopBar({ onOpenCommand, onOpenMobileNav, onOpenPackages }: TopBa
             <CommandIcon className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Search...</span>
             <kbd className="ml-1 hidden sm:inline rounded bg-secondary px-1.5 py-0.5 text-[10px] font-mono">
-              ⌘K
+              {MOD_KEY} K
             </kbd>
           </Button>
 
@@ -81,7 +82,7 @@ export function TopBar({ onOpenCommand, onOpenMobileNav, onOpenPackages }: TopBa
                 <Github className="h-4 w-4" />
               </a>
             </TooltipTrigger>
-            <TooltipContent>fibersim on GitHub</TooltipContent>
+            <TooltipContent>Lampy on GitHub</TooltipContent>
           </Tooltip>
         </div>
       </TooltipProvider>

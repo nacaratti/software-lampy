@@ -12,6 +12,8 @@ import type { JobCreatedResponse, JobInfo } from "@/types/jobs";
 import type {
   IndexProfilePreviewRequest,
   IndexProfilePreviewResponse,
+  IonCrossSectionRequest,
+  IonCrossSectionResponse,
 } from "@/types/fiber";
 import type { FBGCalculationRequest, FBGCalculationResponse, PhaseMaskRequest, PhaseMaskResponse } from "@/types/fbg";
 import type { SplicingCalculationRequest, SplicingCalculationResponse } from "@/types/splicing";
@@ -101,6 +103,11 @@ export const api = {
   previewIndex: (req: IndexProfilePreviewRequest) =>
     post<IndexProfilePreviewRequest, IndexProfilePreviewResponse>(
       "/api/fibers/preview-index",
+      req
+    ),
+  ionCrossSections: (req: IonCrossSectionRequest) =>
+    post<IonCrossSectionRequest, IonCrossSectionResponse>(
+      "/api/fibers/ion-cross-sections",
       req
     ),
 

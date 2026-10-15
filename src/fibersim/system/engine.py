@@ -11,6 +11,7 @@ Units: SI internally (m, W); node parameters use the Device Library vocabulary
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -44,7 +45,7 @@ ProgressCallback = Callable[[float], Optional[bool]]
 # ASE/laser band per ion (m)
 ION_BANDS = {
     "yb": (1010e-9, 1110e-9),
-    "er": (1500e-9, 1600e-9),
+    "er": (1500e-9, 1640e-9),  # C + L band (L-band EDFs reach ~1625 nm)
     "tm": (1850e-9, 2050e-9),
 }
 ION_FACTORIES = {
@@ -53,6 +54,39 @@ ION_FACTORIES = {
     "tm": ActiveIon.create_tm3,
 }
 DB_TO_LIN = math.log(10.0) / 10.0  # dB/m -> 1/m
+
+
+_ATTENUATION_KEY_RE = re.compile(r"^attenuation_db_km_(\d+(?:\.\d+)?)nm$")
+
+
+def passive_attenuation_db_km(node: SystemNode, wavelength_m: Optional[float]) -> float:
+    """Attenuation (dB/km) of a passive fiber at the given wavelength.
+
+    An explicit ``attenuation_db_km`` wins. Otherwise catalog fibers carry
+    per-wavelength datasheet values (``attenuation_db_km_1550nm``, ...); the
+    one closest to ``wavelength_m`` is used (or the first one, if no
+    wavelength is known). Falls back to 0.35 dB/km.
+    """
+    explicit = node.param("attenuation_db_km", None)
+    if explicit is not None:
+        return float(explicit)
+    per_wl = {}
+    for key, value in node.params.items():
+        m = _ATTENUATION_KEY_RE.match(key)
+        if m and value is not None:
+            per_wl[float(m.group(1)) * 1e-9] = float(value)
+    if not per_wl:
+        return 0.35
+    if wavelength_m is None:
+        return next(iter(per_wl.values()))
+    return per_wl[min(per_wl, key=lambda wl: abs(wl - wavelength_m))]
+
+
+def _dominant_wavelength(sig: OpticalSignal) -> Optional[float]:
+    chans = sig.signals() or sig.channels
+    if not chans:
+        return None
+    return max(chans, key=lambda ch: ch.power).wavelength
 
 # Conservative narrow-linewidth assumption for the SBS threshold estimate,
 # since per-channel linewidth isn't tracked through the signal-propagation
@@ -660,7 +694,7 @@ class _Evaluator:
     def _apply_passive(self, node: SystemNode, sig: OpticalSignal) -> OpticalSignal:
         if node.kind == "fiber_passive":
             length_m = float(node.param("length_m", 1.0))
-            att_db = float(node.param("attenuation_db_km", 0.35)) * length_m / 1000.0
+            att_db = passive_attenuation_db_km(node, _dominant_wavelength(sig)) * length_m / 1000.0
             return sig.attenuated_db(att_db)
         if node.kind == "splice":
             return sig.attenuated_db(float(node.param("loss_db", 0.05)))
@@ -795,8 +829,8 @@ class _Evaluator:
 
         # Intracavity passive losses lumped onto the boundaries
         idx_gain = cav.inner_nodes.index(gain)
-        loss_before_db = sum(self._passive_loss_db(n) for n in cav.inner_nodes[:idx_gain])
-        loss_after_db = sum(self._passive_loss_db(n) for n in cav.inner_nodes[idx_gain + 1:])
+        loss_before_db = sum(self._passive_loss_db(n, laser_line) for n in cav.inner_nodes[:idx_gain])
+        loss_after_db = sum(self._passive_loss_db(n, laser_line) for n in cav.inner_nodes[idx_gain + 1:])
         t_before = 10.0 ** (-loss_before_db / 10.0)
         t_after = 10.0 ** (-loss_after_db / 10.0)
         if loss_before_db + loss_after_db > 0:
@@ -877,9 +911,9 @@ class _Evaluator:
             self.node_outputs[n.id] = intracavity
         self.node_outputs[right.id] = out
 
-    def _passive_loss_db(self, node: SystemNode) -> float:
+    def _passive_loss_db(self, node: SystemNode, wavelength_m: Optional[float] = None) -> float:
         if node.kind == "fiber_passive":
-            return float(node.param("attenuation_db_km", 0.35)) * float(node.param("length_m", 1.0)) / 1000.0
+            return passive_attenuation_db_km(node, wavelength_m) * float(node.param("length_m", 1.0)) / 1000.0
         if node.kind == "splice":
             return float(node.param("loss_db", 0.05))
         if node.kind == "coupler_wdm":

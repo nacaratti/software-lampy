@@ -2,7 +2,7 @@
 
 Dev (two processes, hot reload): uvicorn backend.app.main:app --reload  +  npm run dev
 Packaged (one process, one port): build the frontend once (npm run build),
-then this same command serves the UI too — see run.bat / run.sh at the repo root.
+then this same command serves the UI too — see run.bat at the repo root.
 """
 from __future__ import annotations
 import asyncio

@@ -20,6 +20,7 @@ import { savePreset } from "@/lib/presets";
 import { PresetsDialog } from "@/components/common/PresetsDialog";
 import type { EffectSeries, PowerRampRequest, PowerRampResponse } from "@/types/power_ramp";
 
+import { MOD_KEY } from "@/lib/utils";
 const defaultRequest: PowerRampRequest = {
   fiber: {
     ion: "yb",
@@ -39,6 +40,16 @@ const defaultRequest: PowerRampRequest = {
   pump_power_min_w: 1.0,
   pump_power_max_w: 200.0,
   num_steps: 20,
+};
+
+type Ion = PowerRampRequest["fiber"]["ion"];
+
+/** Typical pump / seed wavelengths and upper-state lifetime per ion, applied
+ * when the ion changes so a Yb setup doesn't silently carry over to Er/Tm. */
+const ION_DEFAULTS: Record<Ion, { pump_wavelength_nm: number; seed_wavelength_nm: number; tau_ms: number }> = {
+  yb: { pump_wavelength_nm: 976.0, seed_wavelength_nm: 1064.0, tau_ms: 0.84 },
+  er: { pump_wavelength_nm: 1480.0, seed_wavelength_nm: 1550.0, tau_ms: 10.0 },
+  tm: { pump_wavelength_nm: 793.0, seed_wavelength_nm: 1940.0, tau_ms: 0.45 },
 };
 
 function statusBadge(value: number, threshold: number | null) {
@@ -82,6 +93,15 @@ export function PowerRampPage() {
   }
   function set<K extends keyof PowerRampRequest>(key: K, value: PowerRampRequest[K]) {
     setReq((r) => ({ ...r, [key]: value }));
+  }
+  function setIon(ion: Ion) {
+    const d = ION_DEFAULTS[ion];
+    setReq((r) => ({
+      ...r,
+      pump_wavelength_nm: d.pump_wavelength_nm,
+      seed_wavelength_nm: d.seed_wavelength_nm,
+      fiber: { ...r.fiber, ion, tau_ms: d.tau_ms },
+    }));
   }
 
   useEffect(() => {
@@ -136,8 +156,8 @@ export function PowerRampPage() {
   return (
     <div className="container mx-auto py-8 max-w-7xl">
       <PageHeader
-        eyebrow="Solver"
-        title="Power Ramp — Nonlinear Effects Explorer"
+        eyebrow="Analysis"
+        title="Power Ramp Explorer"
         description="Sweep pump power for a single fiber and watch SRS, SBS, photodarkening, TMI, and Tm/Er ESA-upconversion approach their limits — each fiber is re-solved in isolation at every power step (not a full cavity/system), the same fast diagnostic-level approximation already used for the System Builder's per-fiber thresholds."
         actions={
           <>
@@ -159,7 +179,7 @@ export function PowerRampPage() {
                 <Play className="h-3.5 w-3.5" />
               )}
               {sock.status === "running" ? "Sweeping..." : "Run sweep"}
-              <kbd className="ml-1.5 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-mono">⌘↵</kbd>
+              <kbd className="ml-1.5 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-mono">{MOD_KEY}↵</kbd>
             </Button>
           </>
         }
@@ -174,7 +194,7 @@ export function PowerRampPage() {
             <CardContent className="space-y-4">
               <div className="space-y-1.5 max-w-[200px]">
                 <Label className="text-xs">Active ion</Label>
-                <Select value={req.fiber.ion} onValueChange={(v) => setFiber("ion", v as PowerRampRequest["fiber"]["ion"])}>
+                <Select value={req.fiber.ion} onValueChange={(v) => setIon(v as Ion)}>
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
@@ -238,7 +258,7 @@ export function PowerRampPage() {
             <Card className="border-dashed">
               <CardContent className="pt-6 text-center text-sm text-muted-foreground">
                 Set the fiber and power range and press{" "}
-                <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">⌘ Enter</kbd>.
+                <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">{MOD_KEY} Enter</kbd>.
               </CardContent>
             </Card>
           )}

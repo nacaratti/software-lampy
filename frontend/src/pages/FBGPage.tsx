@@ -144,7 +144,7 @@ export function FBGPage() {
   return (
     <div className="container mx-auto py-8 max-w-6xl">
       <PageHeader
-        eyebrow="Gratings Solver"
+        eyebrow="Solver"
         title="FBG Solver"
         description="Compute reflectivity and transmission spectra of uniform, chirped, apodized, tilted FBGs, and LPGs using coupled-mode theory and Transfer Matrix Methods. Calculate the phase mask for UV inscription."
         actions={

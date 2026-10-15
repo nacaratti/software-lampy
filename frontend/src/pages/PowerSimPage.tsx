@@ -27,7 +27,7 @@ import type {
 import type { IonKind } from "@/types/fiber";
 import { savePreset } from "@/lib/presets";
 import { PresetsDialog } from "@/components/common/PresetsDialog";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, MOD_KEY } from "@/lib/utils";
 import type { FiberConfig } from "@/types/fiber";
 
 interface PowerAsePreset {
@@ -179,7 +179,7 @@ export function PowerSimPage() {
     <div className="container mx-auto py-8 max-w-7xl">
       <PageHeader
         eyebrow="Solver"
-        title="Power propagation & ASE"
+        title="Power & ASE"
         description="Steady-state bidirectional rate equations for Yb / Er / Tm doped fibers, with amplified spontaneous emission across a wavelength band."
         actions={
           <>
@@ -194,7 +194,7 @@ export function PowerSimPage() {
             <Button variant="glow" size="sm" onClick={runASE} disabled={submitting || sock.status === "running"}>
               {(submitting || sock.status === "running") ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
               {sock.status === "running" ? "Running..." : "Run ASE"}
-              <kbd className="ml-1.5 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-mono">⌘↵</kbd>
+              <kbd className="ml-1.5 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-mono">{MOD_KEY}↵</kbd>
             </Button>
           </>
         }
@@ -306,7 +306,7 @@ export function PowerSimPage() {
           {!jobId && (
             <Card className="border-dashed">
               <CardContent className="pt-6 text-center text-sm text-muted-foreground">
-                Configure channels and press <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">⌘ Enter</kbd> to run.
+                Configure channels and press <kbd className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">{MOD_KEY} Enter</kbd> to run.
               </CardContent>
             </Card>
           )}

@@ -142,3 +142,20 @@ def test_thermal_radial_profile_monotonic():
     r, t_r = res["get_radial_profile"](0)
     assert (np.diff(t_r) <= 1e-9).all(), "temperature must decrease with radius"
     assert t_r[0] == pytest.approx(res["T0"][0], rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Ion models
+# ---------------------------------------------------------------------------
+
+def test_erbium_absorbs_at_980nm_pump_band():
+    from fibersim.core.ions import ActiveIon
+
+    er = ActiveIon.create_er3()
+    sa_980, se_980 = er.get_cross_sections(980e-9)
+    assert 1.5e-25 < sa_980 < 3.5e-25
+    assert se_980 == 0.0  # ⁴I11/2 decays non-radiatively; no pump-band emission
+    # No spurious absorption bridging the 980 nm and C bands
+    assert er.get_cross_sections(1200e-9) == (0.0, 0.0)
+    # C-band peak unchanged
+    assert er.get_cross_sections(1530e-9)[0] == pytest.approx(3.0e-25, rel=1e-3)

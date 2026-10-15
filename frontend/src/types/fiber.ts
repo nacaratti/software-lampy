@@ -58,3 +58,13 @@ export interface IndexProfilePreviewResponse {
   n_cladding: number;
   v_number: number | null;
 }
+
+export interface IonCrossSectionRequest {
+  ion: IonKind;
+  wavelengths_nm: number[];
+}
+
+export interface IonCrossSectionResponse {
+  sigma_abs_m2: number[];
+  sigma_em_m2: number[];
+}

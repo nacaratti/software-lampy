@@ -59,7 +59,8 @@ export const ParamForm = forwardRef<ParamFormHandle, ParamFormProps>(function Pa
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3">
+    // Auto-fit columns: one in narrow side panels (System Builder), 2+ in wider dialogs.
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
       {specs.map((s) => {
         const error = errors[s.key];
         return (

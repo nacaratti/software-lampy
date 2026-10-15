@@ -77,8 +77,8 @@ export function TaperPage() {
   return (
     <div className="container mx-auto py-8 max-w-7xl">
       <PageHeader
-        eyebrow="Tapered Fiber Analyzer"
-        title="Tapered Fiber — Local Mode Analysis"
+        eyebrow="Solver"
+        title="Tapered Fiber"
         description="Biconical taper profile with adiabaticity analysis (Love & Henry criterion). Tracks LP₀₁ mode field diameter evolution using three definitions (second-moment, effective area, HWHM) plus V-parameter, beat length, and estimated transmission."
         actions={
           <Button variant="glow" size="sm" onClick={runSimulation} disabled={loading}>

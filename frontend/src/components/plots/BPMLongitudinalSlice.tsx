@@ -56,7 +56,7 @@ export function BPMLongitudinalSlice({ response, height = 300 }: BPMLongitudinal
           ] as any,
           showscale: true,
           colorbar: {
-            tickfont: { color: "rgba(230,230,240,0.6)", size: 10 },
+            tickfont: { size: 10 },
             outlinewidth: 0,
             len: 0.8,
             thickness: 12,

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Play, Loader2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,16 @@ import { decodeArray, reshape2D } from "@/lib/encoding";
 import { useSyncJob } from "@/lib/syncJob";
 import type { ThermalCalculationResponse } from "@/types/thermal";
 
+// A fully-absorbed pump can decay across many orders of magnitude (e.g. a
+// long, strongly-doped fiber with a high overlap can drive it to ~1e-160 W —
+// mathematically correct exponential decay, but physically meaningless and,
+// on a log-scale axis, stretches the whole chart to an unreadable range).
+// Clip anything below a sub-femtowatt floor so the axis stays sane.
+const LOG_PLOT_FLOOR_W = 1e-12;
+function clipForLogPlot(values: number[]): number[] {
+  return values.map((v) => Math.max(v, LOG_PLOT_FLOOR_W));
+}
+
 export function ThermalPage() {
   // Fiber Geometry
   const [fiberLength, setFiberLength] = useState(5.0);
@@ -28,14 +38,21 @@ export function ThermalPage() {
   // Optical Parameters
   const [lambdaPump, setLambdaPump] = useState(976.0);
   const [lambdaSignal, setLambdaSignal] = useState(1018.0);
-  const [gammaPump, setGammaPump] = useState(0.8);
+  // 0.02 (~2%) models a cladding-pumped overlap (Γ_pump ≈ A_core/A_clad for a
+  // double-clad fiber) — needed to keep the default 5 m length physically
+  // sane with the real Yb absorption cross-section: a core-level overlap
+  // (~0.8) would fully absorb the pump within a few cm at these cross-sections
+  // and the pump trace would underflow toward numerical zero over the rest
+  // of the fiber, blowing out the log-scale power chart's axis range.
+  const [gammaPump, setGammaPump] = useState(0.02);
   const [gammaSignal, setGammaSignal] = useState(0.9);
 
-  // Cross-sections (m²) — initial recommended values for 976 nm pump / 1018 nm signal (Yb³⁺)
-  const [sigmaAbsPump, setSigmaAbsPump] = useState(2.5e-25);
-  const [sigmaEmPump, setSigmaEmPump] = useState(2.7e-25);
-  const [sigmaAbsSignal, setSigmaAbsSignal] = useState(0.4e-25);
-  const [sigmaEmSignal, setSigmaEmSignal] = useState(4.5e-25);
+  // Cross-sections (m²) — initial values match the real Yb³⁺ ion model (McCumber-derived)
+  // at 976 nm pump / 1018 nm signal, fetched from /api/fibers/ion-cross-sections below.
+  const [sigmaAbsPump, setSigmaAbsPump] = useState(2.368e-24);
+  const [sigmaEmPump, setSigmaEmPump] = useState(2.431e-24);
+  const [sigmaAbsSignal, setSigmaAbsSignal] = useState(1.02e-25);
+  const [sigmaEmSignal, setSigmaEmSignal] = useState(7.864e-25);
   const [epsilon, setEpsilon] = useState(0.9);
 
   // Pumps & Seed
@@ -60,44 +77,30 @@ export function ThermalPage() {
   const [result, setResult] = useState<ThermalCalculationResponse | null>(null);
   const runSync = useSyncJob();
 
-  // Yb³⁺ cross-section reference tables [wavelength nm, sigma_abs m², sigma_em m²]
-  const getRecommendedSigmas = useCallback((pumpNm: number, signalNm: number) => {
-    const pumpTable: [number, number, number][] = [
-      [900,  0.3e-25, 0.1e-25],
-      [915,  0.9e-25, 0.4e-25],
-      [940,  1.5e-25, 0.8e-25],
-      [960,  2.0e-25, 1.5e-25],
-      [976,  2.5e-25, 2.7e-25],
-      [1000, 0.3e-25, 0.7e-25],
-      [1020, 0.2e-25, 3.8e-25],
-    ];
-    const signalTable: [number, number, number][] = [
-      [1010, 0.2e-25, 3.0e-25],
-      [1018, 0.4e-25, 4.5e-25],
-      [1030, 0.3e-25, 3.5e-25],
-      [1050, 0.15e-25, 2.0e-25],
-      [1064, 0.05e-25, 1.0e-25],
-      [1080, 0.02e-25, 0.4e-25],
-      [1100, 0.01e-25, 0.2e-25],
-    ];
-    function interp(table: [number, number, number][], wl: number): [number, number] {
-      if (wl <= table[0][0]) return [table[0][1], table[0][2]];
-      if (wl >= table[table.length - 1][0]) return [table[table.length - 1][1], table[table.length - 1][2]];
-      for (let i = 0; i < table.length - 1; i++) {
-        if (wl >= table[i][0] && wl <= table[i + 1][0]) {
-          const t = (wl - table[i][0]) / (table[i + 1][0] - table[i][0]);
-          return [
-            table[i][1] + t * (table[i + 1][1] - table[i][1]),
-            table[i][2] + t * (table[i + 1][2] - table[i][2]),
-          ];
-        }
-      }
-      return [table[table.length - 1][1], table[table.length - 1][2]];
-    }
-    const [absP, emP] = interp(pumpTable, pumpNm);
-    const [absS, emS] = interp(signalTable, signalNm);
-    return { sigmaAbsPump: absP, sigmaEmPump: emP, sigmaAbsSignal: absS, sigmaEmSignal: emS };
-  }, []);
+  // Recommended cross-sections at the current pump/signal wavelengths, fetched from
+  // /api/fibers/ion-cross-sections — the same McCumber-derived Yb³⁺ model used by the
+  // System Builder and Power & ASE solver (previously this page used its own independent,
+  // hand-tuned table that disagreed with that model by up to ~10x at 976 nm).
+  const [rec, setRec] = useState({
+    sigmaAbsPump: 2.368e-24, sigmaEmPump: 2.431e-24,
+    sigmaAbsSignal: 1.02e-25, sigmaEmSignal: 7.864e-25,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      api.ionCrossSections({ ion: "yb", wavelengths_nm: [lambdaPump, lambdaSignal] })
+        .then((res) => {
+          if (cancelled) return;
+          setRec({
+            sigmaAbsPump: res.sigma_abs_m2[0], sigmaEmPump: res.sigma_em_m2[0],
+            sigmaAbsSignal: res.sigma_abs_m2[1], sigmaEmSignal: res.sigma_em_m2[1],
+          });
+        })
+        .catch(() => { /* keep last known recommendation on transient errors */ });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [lambdaPump, lambdaSignal]);
 
   async function runSimulation() {
     if (cladRadius <= coreRadius) {
@@ -188,8 +191,8 @@ export function ThermalPage() {
   return (
     <div className="container mx-auto py-8 max-w-7xl">
       <PageHeader
-        eyebrow="Thermal Cavity Solver"
-        title="Active Fiber Laser & Thermal Simulator"
+        eyebrow="Solver · Yb³⁺ only"
+        title="Thermal Simulator"
         description="Simulate pump and signal power evolution in Ytterbium-doped active optical fibers. Evaluates steady-state population inversions and calculates the 2D radial/longitudinal heat profile."
         actions={
           <Button variant="glow" size="sm" onClick={runSimulation} disabled={loading}>
@@ -358,16 +361,16 @@ export function ThermalPage() {
                 label="Signal Wavelength"
                 unit="nm"
                 step={1.0}
-                min={900.0}
+                min={950.0}
                 max={1200.0}
                 value={lambdaSignal}
                 onChange={setLambdaSignal}
               />
               <NumberField
                 label="Pump Overlap (Γp)"
-                step={0.05}
+                step={0.01}
                 min={0.01}
-                max={1.0}
+                max={1}
                 value={gammaPump}
                 onChange={setGammaPump}
               />
@@ -375,7 +378,7 @@ export function ThermalPage() {
                 label="Signal Overlap (Γs)"
                 step={0.05}
                 min={0.01}
-                max={1.0}
+                max={1}
                 value={gammaSignal}
                 onChange={setGammaSignal}
               />
@@ -396,13 +399,13 @@ export function ThermalPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold">Stimulated Cross-Sections (Yb³⁺)</CardTitle>
               <CardDescription className="text-xs">
-                Spectroscopic parameters for Yb³⁺. Hints show recommended values interpolated from Digonnet tables for the selected wavelengths.
+                Spectroscopic parameters for Yb³⁺. Hints show recommended values from the same ion cross-section
+                model used by the System Builder and Power &amp; ASE solver, for the selected wavelengths.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {(() => {
-                const rec = getRecommendedSigmas(lambdaPump, lambdaSignal);
-                const fmt = (v: number) => `${(v * 1e25).toFixed(2)} ×10⁻²⁵ m²`;
+                const fmt = (v: number) => `${v.toExponential(3)} m²`;
                 return (
                   <>
                     <div className="grid grid-cols-2 gap-3">
@@ -607,7 +610,7 @@ export function ThermalPage() {
                         ? [
                             {
                               x: result.z_m,
-                              y: result.pumps_forward,
+                              y: clipForLogPlot(result.pumps_forward),
                               type: "scatter" as any,
                               mode: "lines" as any,
                               name: "P+ pump",
@@ -619,7 +622,7 @@ export function ThermalPage() {
                         ? [
                             {
                               x: result.z_m,
-                              y: result.pumps_backward,
+                              y: clipForLogPlot(result.pumps_backward),
                               type: "scatter" as any,
                               mode: "lines" as any,
                               name: "P- pump",
@@ -629,7 +632,7 @@ export function ThermalPage() {
                         : []),
                       {
                         x: result.z_m,
-                        y: result.signals_forward,
+                        y: clipForLogPlot(result.signals_forward),
                         type: "scatter" as any,
                         mode: "lines" as any,
                         name: "P+ signal",
@@ -637,7 +640,7 @@ export function ThermalPage() {
                       },
                       {
                         x: result.z_m,
-                        y: result.signals_backward,
+                        y: clipForLogPlot(result.signals_backward),
                         type: "scatter" as any,
                         mode: "lines" as any,
                         name: "P- signal",
@@ -645,7 +648,7 @@ export function ThermalPage() {
                       },
                       {
                         x: result.z_m,
-                        y: result.pump_output_w,
+                        y: clipForLogPlot(result.pump_output_w),
                         type: "scatter" as any,
                         mode: "markers" as any,
                         name: "P_out",
@@ -654,11 +657,11 @@ export function ThermalPage() {
                     ]}
                     layout={{
                       xaxis: { title: { text: "Length [m]" }, zeroline: false },
-                      yaxis: { title: { text: "Power [W]" }, rangemode: "nonnegative" },
-                      margin: { t: 10, r: 20, b: 40, l: 50 },
-                      legend: { orientation: "h" as any, y: -0.2 },
+                      yaxis: { title: { text: "Power [W]" }, type: "log" as any },
+                      margin: { t: 10, r: 20, b: 80, l: 50 },
+                      legend: { orientation: "h" as any, y: -0.35 },
                     }}
-                    height={320}
+                    height={340}
                   />
                 </CardContent>
               </Card>

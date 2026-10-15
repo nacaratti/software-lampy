@@ -72,3 +72,13 @@ class IndexProfilePreviewResponse(BaseModel):
     n_core: float
     n_cladding: float
     v_number: float | None = None
+
+
+class IonCrossSectionRequest(BaseModel):
+    ion: IonKind = "yb"
+    wavelengths_nm: list[float] = Field(..., min_length=1, max_length=20)
+
+
+class IonCrossSectionResponse(BaseModel):
+    sigma_abs_m2: list[float]
+    sigma_em_m2: list[float]

@@ -12,3 +12,8 @@ export function formatNumber(value: number, digits = 4): string {
   }
   return value.toFixed(digits);
 }
+
+/** Platform modifier-key glyph for shortcut hints: "⌘" on Apple, "Ctrl" elsewhere
+ * (react-hotkeys-hook's `mod` already maps to the right key; this is just the label). */
+export const MOD_KEY: string =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "⌘" : "Ctrl";
